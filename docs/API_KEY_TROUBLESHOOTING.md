@@ -9,8 +9,8 @@ The app uses Google Directions API for routing. The API key can be configured in
 2. Add: `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_key_here`
 3. Restart Expo dev server: `npx expo start --clear`
 
-### Option 2: Hardcoded (Fallback)
-The key is hardcoded in `src/config.ts` as a fallback.
+### Option 2: From .env only
+The key is read from `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` in `.env` via `src/config.ts`. Never commit real keys.
 
 ---
 
@@ -141,10 +141,11 @@ The app currently calls the Directions API **directly from the client**. This wo
 
 ## Environment Variables Setup
 
-1. Create `.env` file:
+1. Create `.env` file (copy from `.env.example`):
 ```bash
-EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=AIzaSyCfEEK6Zsm9_sc0YHeU4NSj0lMIHpHn-WI
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 ```
+Replace `your_google_maps_api_key_here` with your actual key from Google Cloud Console. Never commit `.env`.
 
 2. Add to `.gitignore`:
 ```

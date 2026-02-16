@@ -2,12 +2,14 @@
 
 ## ✅ API Key Configuration Status
 
+Keys are read from **environment variables only** (`.env`). Never hardcode API keys in source or docs.
+
 ### 1. API Key Definition
 **Location:** `src/config.ts`
 ```typescript
-export const GOOGLE_MAPS_API_KEY = 'AIzaSyCfEEK6Zsm9_sc0YHeU4NSj0lMIHpHn-WI';
+export const GOOGLE_MAPS_API_KEY = getEnv('EXPO_PUBLIC_GOOGLE_MAPS_API_KEY');
 ```
-✅ **Status:** Correctly defined and exported
+✅ **Status:** Read from `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` in `.env`; no hardcoded key
 
 ---
 
@@ -39,23 +41,23 @@ export const GOOGLE_MAPS_API_KEY = 'AIzaSyCfEEK6Zsm9_sc0YHeU4NSj0lMIHpHn-WI';
 ```json
 "ios": {
   "config": {
-    "googleMapsApiKey": "AIzaSyCfEEK6Zsm9_sc0YHeU4NSj0lMIHpHn-WI"
+    "googleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY"
   }
 }
 ```
-✅ **Status:** Correctly configured for iOS map tiles
+✅ **Status:** Use your key from `.env` or Google Cloud Console. For dev builds, you can substitute at build time; Expo Go ignores this.
 
 #### Android Configuration:
 ```json
 "android": {
   "config": {
     "googleMaps": {
-      "apiKey": "AIzaSyCfEEK6Zsm9_sc0YHeU4NSj0lMIHpHn-WI"
+      "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
     }
   }
 }
 ```
-✅ **Status:** Correctly configured for Android map tiles
+✅ **Status:** Same as iOS—use your key; keep `app.json` with placeholders and use env/build secrets for real keys.
 
 ---
 
@@ -64,8 +66,8 @@ export const GOOGLE_MAPS_API_KEY = 'AIzaSyCfEEK6Zsm9_sc0YHeU4NSj0lMIHpHn-WI';
 ### ✅ All API Key Usage Points Verified:
 
 1. **Config File** (`src/config.ts`)
-   - ✅ API key is defined and exported
-   - ✅ Key: `AIzaSyCfEEK6Zsm9_sc0YHeU4NSj0lMIHpHn-WI`
+   - ✅ API key is read from `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` in `.env`
+   - ✅ No hardcoded key; never commit real keys
 
 2. **Directions API** (`src/services/directions.ts`)
    - ✅ API key is passed as parameter
