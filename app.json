@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "plugins": [["expo-contacts", { "contactsPermission": "SafeRoute uses your contacts so you can send your location to anyone in an emergency (SOS)." }]],
+    "name": "SafeRoute",
+    "slug": "saferoute",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "saferoute",
+    "splash": {
+      "backgroundColor": "#0B0B0F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.saferoute.app",
+      "config": {
+        "googleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+      }
+    },
+    "android": {
+      "config": {
+        "googleMaps": {
+          "apiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        }
+      }
+    }
+  }
+}

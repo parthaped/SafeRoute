@@ -1,0 +1,9 @@
+diff --git a/node_modules/expo-blur/build/index.js b/node_modules/expo-blur/build/index.js
+index 6321966..2c4f834 100644
+--- a/node_modules/expo-blur/build/index.js
++++ b/node_modules/expo-blur/build/index.js
+@@ -1,2 +1,2 @@
+-export { default as BlurView } from './BlurView';
++export { default as BlurView } from './BlurView.js';
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file
