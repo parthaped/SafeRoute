@@ -15,11 +15,11 @@ export function IconButton({ icon, label, onPress, style }: IconButtonProps) {
   return (
     <TouchableOpacity
       onPress={onPress}
-      activeOpacity={0.8}
+      activeOpacity={0.7}
       style={[styles.container, style]}
     >
       <View style={styles.iconWrapper}>{icon}</View>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label} numberOfLines={1}>{label}</Text>
     </TouchableOpacity>
   );
 }
@@ -29,19 +29,22 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.lg,
+    paddingVertical: 18,
     paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.xl,
-    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surface1,
+    borderWidth: 1,
+    borderColor: colors.border,
     minWidth: 100,
     maxWidth: 120,
   },
   iconWrapper: {
-    marginBottom: spacing.sm,
+    marginBottom: 10,
   },
   label: {
     fontSize: fontSizes.footnote,
     fontWeight: fontWeights.medium,
-    color: colors.textPrimary,
+    color: colors.textSecondary,
+    letterSpacing: 0.1,
   },
 });

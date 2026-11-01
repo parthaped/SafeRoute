@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Switch, Linking, Alert, Modal, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Switch, Linking, Alert, Modal, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, Platform, KeyboardAvoidingView, Keyboard } from 'react-native';
 import * as Location from 'expo-location';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -18,7 +18,7 @@ import {
 } from '../components/icons/Icons';
 import { colors } from '../theme/colors';
 import { spacing, borderRadius } from '../theme/spacing';
-import { fontSizes, fontWeights } from '../theme/typography';
+import { fontSizes, fontWeights, letterSpacing } from '../theme/typography';
 import type { TabParamList } from '../navigation/types';
 import { toggleFlashlight } from '../services/flashlight';
 import {
@@ -45,6 +45,7 @@ import {
   getQuietModePromptDismissedForever,
   setQuietModePromptDismissedForever,
 } from '../services/quietMode';
+import { submitEscortRequest } from '../services/escortRequest';
 
 const RUPD_PHONE = '8489326512';
 /** RUPD escort — request walking escort (https://ipo.rutgers.edu/publicsafety/rupd/escorts) */
@@ -93,6 +94,13 @@ export function HomeScreen({
   const [showWalkWithMeModal, setShowWalkWithMeModal] = useState(false);
   const [walkWithMeContacts, setWalkWithMeContacts] = useState<SOSRecipient[]>([]);
   const [isSendingWalkWithMe, setIsSendingWalkWithMe] = useState(false);
+  const [showEscortFormModal, setShowEscortFormModal] = useState(false);
+  const [escortReason, setEscortReason] = useState('');
+  const [escortPriority, setEscortPriority] = useState<'normal' | 'urgent'>('normal');
+  const [isSubmittingEscort, setIsSubmittingEscort] = useState(false);
+  const [kbHeight, setKbHeight] = useState(0);
+  const [reportDescStep, setReportDescStep] = useState(false);
+  const reportScrollRef = useRef<ScrollView>(null);
 
   const handleStartRoute = () => {
     if (onStartRoute) {
@@ -115,6 +123,14 @@ export function HomeScreen({
       [
         { text: 'Cancel', style: 'cancel' },
         {
+          text: 'Request RUPD escort via app',
+          onPress: () => {
+            setEscortReason('');
+            setEscortPriority('normal');
+            setShowEscortFormModal(true);
+          },
+        },
+        {
           text: 'Ask someone to walk with me',
           onPress: async () => {
             const contacts = await getEmergencyContacts();
@@ -129,7 +145,7 @@ export function HomeScreen({
           },
         },
         {
-          text: 'Call RUPD for escort',
+          text: 'Call RUPD',
           onPress: () =>
             Linking.openURL(`tel:${RUPD_ESCORT_PHONE}`).catch(() =>
               Alert.alert('Cannot call', 'Call RUPD at (732) 932-7211 to request an escort.')
@@ -137,6 +153,46 @@ export function HomeScreen({
         },
       ]
     );
+  };
+
+  const handleSubmitEscortRequest = async () => {
+    if (!escortReason.trim()) {
+      Alert.alert('Reason required', 'Please tell the officer why you need an escort.');
+      return;
+    }
+    setIsSubmittingEscort(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Location permission is required to request an escort.');
+        return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = loc.coords;
+
+      await submitEscortRequest({
+        userId: `user-${Date.now().toString(36)}`,
+        userName: 'SafeRoute User',
+        userPhone: '',
+        origin: { lat: latitude, lng: longitude, name: 'Current Location' },
+        destination: { lat: latitude, lng: longitude, name: 'Nearby' },
+        currentLocation: { lat: latitude, lng: longitude },
+        routeLabel: 'Escort from current location',
+        priority: escortPriority,
+        reason: escortReason.trim(),
+      });
+
+      setShowEscortFormModal(false);
+      Alert.alert(
+        'Escort Requested',
+        'Your request has been sent to RUPD dispatch. An officer will be assigned shortly. Stay where you are if possible.',
+        [{ text: 'OK' }]
+      );
+    } catch {
+      Alert.alert('Error', 'Could not submit request. Try calling RUPD at (732) 932-7211.');
+    } finally {
+      setIsSubmittingEscort(false);
+    }
   };
 
   const handleCloseWalkWithMeModal = () => {
@@ -246,6 +302,19 @@ export function HomeScreen({
   const handleCommunity = () => {
     navigation.navigate('Community');
   };
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = (e: { endCoordinates: { height: number } }) => {
+      setKbHeight(e.endCoordinates.height);
+      setTimeout(() => reportScrollRef.current?.scrollToEnd({ animated: true }), 100);
+    };
+    const onHide = () => setKbHeight(0);
+    const sub1 = Keyboard.addListener(showEvent, onShow);
+    const sub2 = Keyboard.addListener(hideEvent, onHide);
+    return () => { sub1.remove(); sub2.remove(); };
+  }, []);
 
   // Load quiet mode on mount
   useEffect(() => {
@@ -515,6 +584,7 @@ export function HomeScreen({
     setShowReportModal(false);
     setIncidentDescription('');
     setSelectedCrimeType('');
+    setReportDescStep(false);
   };
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -524,22 +594,20 @@ export function HomeScreen({
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <SafeRouteLogo width={120} height={140} showText />
+        <SafeRouteLogo width={100} height={120} showText />
 
-        {/* Three Primary Buttons */}
+        <Text style={styles.sectionLabel}>QUICK ACTIONS</Text>
         <View style={styles.primaryButtons}>
           <IconButton
             icon={<PhoneIcon />}
             label="Call RUPD"
             onPress={handleCallRUPD}
           />
-          <View style={styles.buttonSpacer} />
           <IconButton
             icon={<BellIcon />}
             label="SOS"
             onPress={handleSOS}
           />
-          <View style={styles.buttonSpacer} />
           <IconButton
             icon={<CommentIcon />}
             label="Community"
@@ -548,7 +616,7 @@ export function HomeScreen({
         </View>
 
         {/* Start Route Card */}
-        <Card style={styles.startRouteCard} useBlur intensity={60}>
+        <Card style={styles.startRouteCard} useBlur intensity={50}>
           <View style={styles.startRouteCardContent}>
             <View style={styles.startRouteCardHeader}>
               <Text style={styles.startRouteTitle}>Start Route</Text>
@@ -566,10 +634,36 @@ export function HomeScreen({
           </View>
         </Card>
 
+        {/* Request Escort Card */}
+        <Card style={styles.escortCard} useBlur intensity={50}>
+          <View style={styles.escortCardContent}>
+            <View style={styles.escortCardLeft}>
+              <View style={styles.escortCardIconWrap}>
+                <EscortIcon color={colors.white} />
+              </View>
+              <View style={styles.escortCardText}>
+                <Text style={styles.escortCardTitle}>Request Escort</Text>
+                <Text style={styles.escortCardSubtitle}>
+                  RUPD officer walks with you
+                </Text>
+              </View>
+            </View>
+            <Button
+              title="REQUEST"
+              onPress={handleRequestEscort}
+              variant="primary"
+              style={styles.escortCardButton}
+            />
+          </View>
+        </Card>
+
+        <Text style={styles.sectionLabel}>INCIDENT TOOLS</Text>
         {/* Report Event Card */}
-        <Card style={styles.reportCard} useBlur intensity={80}>
+        <Card style={styles.reportCard} useBlur intensity={50}>
           <View style={styles.reportCardContent}>
-            <BellIcon color={colors.primaryRed} />
+            <View style={styles.reportIconWrap}>
+              <BellIcon color={colors.textPrimary} />
+            </View>
             <View style={styles.reportCardText}>
               <Text style={styles.reportCardTitle}>Report</Text>
               <Text style={styles.reportCardSubtitle}>
@@ -586,9 +680,11 @@ export function HomeScreen({
         </Card>
 
         {/* Record Audio Card */}
-        <Card style={styles.recordCard} useBlur intensity={80}>
+        <Card style={styles.recordCard} useBlur intensity={50}>
           <View style={styles.recordCardContent}>
-            <MicrophoneIcon color={colors.primaryRed} />
+            <View style={styles.reportIconWrap}>
+              <MicrophoneIcon color={colors.textPrimary} />
+            </View>
             <View style={styles.recordCardText}>
               <Text style={styles.recordCardTitle}>Record</Text>
               <Text style={styles.recordCardSubtitle}>
@@ -604,23 +700,17 @@ export function HomeScreen({
           </View>
         </Card>
 
+        <Text style={styles.sectionLabel}>TOOLS</Text>
         <View style={styles.secondaryButtons}>
           <IconButton
             icon={<FlashlightIcon />}
             label="Flashlight"
             onPress={handleFlashlight}
           />
-          <View style={styles.buttonSpacer} />
           <IconButton
             icon={<LocationIcon />}
             label="Share Location"
             onPress={handleShareLocation}
-          />
-          <View style={styles.buttonSpacer} />
-          <IconButton
-            icon={<EscortIcon />}
-            label="Request Escort"
-            onPress={handleRequestEscort}
           />
         </View>
 
@@ -630,7 +720,7 @@ export function HomeScreen({
           <Switch
             value={quietMode}
             onValueChange={handleQuietModeChange}
-            trackColor={{ false: colors.border, true: colors.primaryRed }}
+            trackColor={{ false: 'rgba(255,255,255,0.08)', true: colors.primaryRed }}
             thumbColor={colors.white}
           />
         </View>
@@ -643,6 +733,7 @@ export function HomeScreen({
         transparent
         onRequestClose={handleCloseRecordModal}
       >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
@@ -767,6 +858,7 @@ export function HomeScreen({
             )}
           </View>
         </SafeAreaView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Report Event Modal */}
@@ -776,119 +868,169 @@ export function HomeScreen({
         transparent
         onRequestClose={handleCloseReportModal}
       >
-        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Report Incident</Text>
-              <TouchableOpacity onPress={handleCloseReportModal} style={styles.closeButton}>
-                <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-            </View>
+        {reportDescStep && selectedCrimeType ? (
+          <View style={[styles.modalContainer, { backgroundColor: colors.surface1 }]}>
+            <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+              <View style={{ flex: 1, paddingHorizontal: spacing.xxl, paddingTop: spacing.md }}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Report Incident</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                    <TouchableOpacity onPress={() => Keyboard.dismiss()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                      <Text style={{ fontSize: fontSizes.caption, fontWeight: fontWeights.semibold, color: colors.primaryRed }}>Done</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => { Keyboard.dismiss(); handleCloseReportModal(); }} style={styles.closeButton}>
+                      <Text style={styles.closeButtonText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
 
-            <Text style={styles.modalSubtitle}>
-              Report an incident with details about what's happening
-            </Text>
-
-            {/* Incident Type Selection */}
-            <View style={styles.typeSelector}>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  incidentType === 'self' && styles.typeButtonActive,
-                ]}
-                onPress={() => setIncidentType('self')}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    incidentType === 'self' && styles.typeButtonTextActive,
-                  ]}
+                <TouchableOpacity
+                  style={[styles.crimeTypeButton, styles.crimeTypeButtonActive, { alignSelf: 'flex-start', marginBottom: spacing.md }]}
+                  onPress={() => { Keyboard.dismiss(); setReportDescStep(false); }}
+                  activeOpacity={0.7}
                 >
-                  Happening to me
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  incidentType === 'other' && styles.typeButtonActive,
-                ]}
-                onPress={() => setIncidentType('other')}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    incidentType === 'other' && styles.typeButtonTextActive,
-                  ]}
-                >
-                  Happening to someone else
-                </Text>
-              </TouchableOpacity>
-            </View>
+                  <Text style={[styles.crimeTypeButtonText, styles.crimeTypeButtonTextActive]}>
+                    {selectedCrimeType} ✕
+                  </Text>
+                </TouchableOpacity>
 
-            {/* Crime Type Selector */}
-            <View style={styles.crimeTypeSection}>
-              <Text style={styles.crimeTypeLabel}>Select Crime Type</Text>
-              <ScrollView
-                style={styles.crimeTypeScroll}
-                contentContainerStyle={styles.crimeTypeScrollContent}
-                showsVerticalScrollIndicator={true}
-              >
-                {CRIME_TYPES.map((crime) => (
-                  <TouchableOpacity
-                    key={crime}
-                    style={[
-                      styles.crimeTypeButton,
-                      selectedCrimeType === crime && styles.crimeTypeButtonActive,
-                    ]}
-                    onPress={() => setSelectedCrimeType(crime)}
-                    activeOpacity={0.7}
-                  >
-                    <Text
-                      style={[
-                        styles.crimeTypeButtonText,
-                        selectedCrimeType === crime && styles.crimeTypeButtonTextActive,
-                      ]}
-                    >
-                      {crime}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-
-            {/* Description Input */}
-            {selectedCrimeType && (
-              <View style={styles.descriptionSection}>
                 <Text style={styles.descriptionLabel}>Describe what happened</Text>
                 <TextInput
-                  style={styles.descriptionInput}
+                  style={[styles.descriptionInput, { maxHeight: 200, marginBottom: spacing.md }]}
                   placeholder="Provide details about the incident..."
                   placeholderTextColor={colors.textTertiary}
                   value={incidentDescription}
                   onChangeText={setIncidentDescription}
                   multiline
-                  numberOfLines={4}
                   textAlignVertical="top"
+                  autoFocus
                 />
-              </View>
-            )}
 
-            {/* Send Button */}
-            {selectedCrimeType && (
-              <View style={styles.sendButtonContainer}>
                 <Button
                   title="Send Report"
-                  onPress={handleSendReport}
+                  onPress={() => { Keyboard.dismiss(); handleSendReport(); }}
                   variant="primary"
-                  style={styles.sendButton}
+                  fullWidth
+                  style={{ marginBottom: kbHeight > 0 ? kbHeight : spacing.xl }}
                   loading={isSending}
                 />
               </View>
-            )}
+            </SafeAreaView>
           </View>
-        </SafeAreaView>
+        ) : (
+          <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Report Incident</Text>
+                <TouchableOpacity onPress={handleCloseReportModal} style={styles.closeButton}>
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                ref={reportScrollRef}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: spacing.xl }}
+              >
+                <Text style={styles.modalSubtitle}>
+                  Report an incident with details about what's happening
+                </Text>
+
+                {/* Incident Type Selection */}
+                <View style={styles.typeSelector}>
+                  <TouchableOpacity
+                    style={[
+                      styles.typeButton,
+                      incidentType === 'self' && styles.typeButtonActive,
+                    ]}
+                    onPress={() => setIncidentType('self')}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.typeButtonText,
+                        incidentType === 'self' && styles.typeButtonTextActive,
+                      ]}
+                    >
+                      Happening to me
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.typeButton,
+                      incidentType === 'other' && styles.typeButtonActive,
+                    ]}
+                    onPress={() => setIncidentType('other')}
+                    activeOpacity={0.7}
+                  >
+                    <Text
+                      style={[
+                        styles.typeButtonText,
+                        incidentType === 'other' && styles.typeButtonTextActive,
+                      ]}
+                    >
+                      Happening to someone else
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Crime Type Selector */}
+                <View style={styles.crimeTypeSection}>
+                  <Text style={styles.crimeTypeLabel}>Select Crime Type</Text>
+                  <View style={styles.crimeTypeScrollContent}>
+                    {CRIME_TYPES.map((crime) => (
+                      <TouchableOpacity
+                        key={crime}
+                        style={[
+                          styles.crimeTypeButton,
+                          selectedCrimeType === crime && styles.crimeTypeButtonActive,
+                        ]}
+                        onPress={() => setSelectedCrimeType(crime)}
+                        activeOpacity={0.7}
+                      >
+                        <Text
+                          style={[
+                            styles.crimeTypeButtonText,
+                            selectedCrimeType === crime && styles.crimeTypeButtonTextActive,
+                          ]}
+                        >
+                          {crime}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Tap to describe */}
+                {selectedCrimeType && (
+                  <TouchableOpacity
+                    style={[styles.descriptionInput, { marginTop: spacing.xl }]}
+                    onPress={() => setReportDescStep(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={{ color: incidentDescription ? colors.textPrimary : colors.textTertiary, fontSize: fontSizes.caption }}>
+                      {incidentDescription || 'Tap to describe what happened...'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Send Button */}
+                {selectedCrimeType && (
+                  <View style={styles.sendButtonContainer}>
+                    <Button
+                      title="Send Report"
+                      onPress={handleSendReport}
+                      variant="primary"
+                      style={styles.sendButton}
+                      loading={isSending}
+                    />
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </SafeAreaView>
+        )}
       </Modal>
 
       {/* Share Location Modal */}
@@ -1105,6 +1247,76 @@ export function HomeScreen({
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* RUPD Escort Request Form Modal */}
+      <Modal
+        visible={showEscortFormModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowEscortFormModal(false)}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Request RUPD Escort</Text>
+              <TouchableOpacity onPress={() => setShowEscortFormModal(false)} style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalSubtitle}>
+              An officer will be dispatched to walk with you. Your location will be shared with RUPD dispatch.
+            </Text>
+
+            <View style={styles.escortFormSection}>
+              <Text style={styles.escortFormLabel}>PRIORITY</Text>
+              <View style={styles.escortPriorityRow}>
+                <TouchableOpacity
+                  style={[styles.escortPriorityButton, escortPriority === 'normal' && styles.escortPriorityActive]}
+                  onPress={() => setEscortPriority('normal')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.escortPriorityText, escortPriority === 'normal' && styles.escortPriorityTextActive]}>Normal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.escortPriorityButton, escortPriority === 'urgent' && styles.escortPriorityUrgentActive]}
+                  onPress={() => setEscortPriority('urgent')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.escortPriorityText, escortPriority === 'urgent' && styles.escortPriorityUrgentText]}>Urgent</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            <View style={styles.escortFormSection}>
+              <Text style={styles.escortFormLabel}>WHY DO YOU NEED AN ESCORT?</Text>
+              <TextInput
+                style={styles.escortReasonInput}
+                placeholder="e.g. Walking alone late at night, street lights are out..."
+                placeholderTextColor={colors.textTertiary}
+                value={escortReason}
+                onChangeText={setEscortReason}
+                multiline
+                numberOfLines={4}
+                maxLength={300}
+                textAlignVertical="top"
+              />
+            </View>
+
+            <Button
+              title={isSubmittingEscort ? 'Submitting...' : 'Submit Escort Request'}
+              onPress={handleSubmitEscortRequest}
+              variant="primary"
+              fullWidth
+              style={styles.shareConfirmButton}
+              disabled={isSubmittingEscort || !escortReason.trim()}
+              loading={isSubmittingEscort}
+            />
+          </View>
+        </SafeAreaView>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1118,26 +1330,30 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
     alignItems: 'center',
+  },
+  sectionLabel: {
+    fontSize: fontSizes.caption2,
+    fontWeight: fontWeights.semibold,
+    color: colors.textTertiary,
+    letterSpacing: letterSpacing.caps,
+    alignSelf: 'flex-start',
+    marginTop: spacing.xxl,
+    marginBottom: spacing.sm,
+    marginLeft: spacing.xs,
   },
   primaryButtons: {
     flexDirection: 'row',
-    marginTop: spacing.md,
     gap: spacing.sm,
     justifyContent: 'center',
     width: '100%',
   },
-  buttonSpacer: {
-    width: spacing.xs,
-  },
   startRouteCard: {
     width: '100%',
-    marginTop: spacing.md,
-    borderWidth: 2,
-    borderColor: colors.primaryRed + '40',
-    backgroundColor: 'rgba(225, 6, 0, 0.05)',
+    marginTop: spacing.lg,
+    borderColor: colors.primaryRed + '30',
   },
   startRouteCardContent: {
     gap: spacing.md,
@@ -1149,7 +1365,7 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.title3,
     fontWeight: fontWeights.bold,
     color: colors.primaryRed,
-    marginBottom: spacing.xs,
+    letterSpacing: letterSpacing.tight,
   },
   startRouteSubtitle: {
     fontSize: fontSizes.footnote,
@@ -1158,12 +1374,50 @@ const styles = StyleSheet.create({
   },
   startRouteButton: {
     marginTop: spacing.xs,
-    backgroundColor: colors.primaryRed,
-    borderWidth: 0,
+  },
+  escortCard: {
+    width: '100%',
+    marginTop: spacing.lg,
+    borderColor: '#007AFF' + '30',
+  },
+  escortCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  escortCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  escortCardIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.xs,
+    backgroundColor: '#007AFF' + '18',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  escortCardText: {
+    flex: 1,
+  },
+  escortCardTitle: {
+    fontSize: fontSizes.body,
+    fontWeight: fontWeights.bold,
+    color: colors.textPrimary,
+    letterSpacing: letterSpacing.tight,
+  },
+  escortCardSubtitle: {
+    fontSize: fontSizes.footnote,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  escortCardButton: {
+    minWidth: 90,
   },
   secondaryButtons: {
     flexDirection: 'row',
-    marginTop: spacing.md,
     gap: spacing.sm,
     justifyContent: 'center',
     width: '100%',
@@ -1171,148 +1425,158 @@ const styles = StyleSheet.create({
   quietModeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: spacing.lg,
-    gap: spacing.sm,
+    marginTop: spacing.xxl,
     width: '100%',
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surface1,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   quietModeLabel: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
+    fontWeight: fontWeights.medium,
     color: colors.textPrimary,
     flex: 1,
+    marginLeft: spacing.sm,
   },
   recordCard: {
     width: '100%',
     marginTop: spacing.sm,
-    borderWidth: 2,
-    borderColor: colors.primaryRed + '40',
   },
   recordCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
   recordCardText: {
     flex: 1,
   },
   recordCardTitle: {
-    fontSize: fontSizes.title3,
-    fontWeight: fontWeights.bold,
+    fontSize: fontSizes.body,
+    fontWeight: fontWeights.semibold,
     color: colors.textPrimary,
-    marginBottom: 2,
+    letterSpacing: letterSpacing.tight,
   },
   recordCardSubtitle: {
-    fontSize: fontSizes.caption,
-    color: colors.textSecondary,
+    fontSize: fontSizes.footnote,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
   recordButton: {
     minWidth: 100,
   },
   reportCard: {
     width: '100%',
-    marginTop: spacing.sm,
-    borderWidth: 2,
-    borderColor: colors.primaryRed + '40',
   },
   reportCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
+  },
+  reportIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: borderRadius.xs,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   reportCardText: {
     flex: 1,
   },
   reportCardTitle: {
-    fontSize: fontSizes.title3,
-    fontWeight: fontWeights.bold,
+    fontSize: fontSizes.body,
+    fontWeight: fontWeights.semibold,
     color: colors.textPrimary,
-    marginBottom: 2,
+    letterSpacing: letterSpacing.tight,
   },
   reportCardSubtitle: {
-    fontSize: fontSizes.caption,
-    color: colors.textSecondary,
+    fontSize: fontSizes.footnote,
+    color: colors.textTertiary,
+    marginTop: 2,
   },
   reportButton: {
     minWidth: 100,
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    backgroundColor: 'rgba(0, 0, 0, 0.85)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface1,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
-    padding: spacing.xl,
-    paddingBottom: spacing.xxxl + 20,
+    padding: spacing.xxl,
+    paddingBottom: spacing.lg,
     maxHeight: '90%',
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   modalTitle: {
-    fontSize: fontSizes.title2,
+    fontSize: fontSizes.title3,
     fontWeight: fontWeights.bold,
     color: colors.textPrimary,
+    letterSpacing: letterSpacing.tight,
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.cardBackground,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeButtonText: {
-    fontSize: 20,
-    color: colors.textPrimary,
-    fontWeight: fontWeights.bold,
+    fontSize: 16,
+    color: colors.textSecondary,
+    fontWeight: fontWeights.semibold,
   },
   modalSubtitle: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     color: colors.textSecondary,
     marginBottom: spacing.xl,
-    lineHeight: 22,
+    lineHeight: 21,
   },
   typeSelector: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     marginBottom: spacing.xl,
   },
   typeButton: {
     flex: 1,
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.cardBackground,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.border,
     alignItems: 'center',
   },
   typeButtonActive: {
     borderColor: colors.primaryRed,
-    backgroundColor: colors.primaryRed + '20',
+    backgroundColor: colors.primaryRed + '15',
   },
   typeButtonText: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     fontWeight: fontWeights.medium,
     color: colors.textSecondary,
   },
   typeButtonTextActive: {
     color: colors.primaryRed,
-    fontWeight: fontWeights.bold,
+    fontWeight: fontWeights.semibold,
   },
   crimeTypeSection: {
     marginBottom: spacing.xl,
-    maxHeight: 200,
   },
   crimeTypeLabel: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     fontWeight: fontWeights.semibold,
     color: colors.textPrimary,
     marginBottom: spacing.sm,
@@ -1326,24 +1590,24 @@ const styles = StyleSheet.create({
   crimeTypeButton: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
-    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
   },
   crimeTypeButtonActive: {
     borderColor: colors.primaryRed,
-    backgroundColor: colors.primaryRed + '20',
+    backgroundColor: colors.primaryRed + '15',
   },
   crimeTypeButtonText: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     fontWeight: fontWeights.medium,
     color: colors.textPrimary,
   },
   crimeTypeButtonTextActive: {
     color: colors.primaryRed,
-    fontWeight: fontWeights.bold,
+    fontWeight: fontWeights.semibold,
   },
   sendButtonContainer: {
     marginTop: spacing.xl,
@@ -1361,7 +1625,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xxl,
   },
   recordingStartText: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     color: colors.textSecondary,
     textAlign: 'center',
     marginTop: spacing.md,
@@ -1380,27 +1644,27 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.xl,
-    backgroundColor: colors.primaryRed + '20',
-    borderRadius: borderRadius.xl,
-    borderWidth: 2,
-    borderColor: colors.primaryRed,
+    backgroundColor: colors.primaryRed + '12',
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.primaryRed + '40',
   },
   recordingDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     backgroundColor: colors.primaryRed,
   },
   recordingText: {
-    fontSize: fontSizes.title3,
-    fontWeight: fontWeights.bold,
+    fontSize: fontSizes.body,
+    fontWeight: fontWeights.semibold,
     color: colors.primaryRed,
   },
   recordingTime: {
-    fontSize: fontSizes.title3,
-    fontWeight: fontWeights.bold,
+    fontSize: fontSizes.body,
+    fontWeight: fontWeights.semibold,
     color: colors.textPrimary,
-    fontFamily: 'monospace',
+    fontVariant: ['tabular-nums'],
   },
   stopButton: {
     minWidth: 200,
@@ -1409,20 +1673,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   recordingCompleteText: {
-    fontSize: fontSizes.title3,
-    fontWeight: fontWeights.bold,
+    fontSize: fontSizes.body,
+    fontWeight: fontWeights.semibold,
     color: colors.secondaryGreen,
     marginBottom: spacing.xs,
   },
   recordingCompleteTime: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     color: colors.textSecondary,
     marginBottom: spacing.xl,
-    fontFamily: 'monospace',
+    fontVariant: ['tabular-nums'],
   },
   recordingActions: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     width: '100%',
   },
   actionButton: {
@@ -1432,17 +1696,17 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
   },
   descriptionLabel: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     fontWeight: fontWeights.semibold,
     color: colors.textPrimary,
     marginBottom: spacing.sm,
   },
   descriptionInput: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    backgroundColor: colors.surface2,
+    borderRadius: borderRadius.sm,
+    padding: spacing.lg,
     color: colors.textPrimary,
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     minHeight: 100,
     borderWidth: 1,
     borderColor: colors.border,
@@ -1457,17 +1721,17 @@ const styles = StyleSheet.create({
   },
   shareContactItem: {
     padding: spacing.md,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface2,
   },
   shareContactItemActive: {
     borderColor: colors.primaryRed,
-    backgroundColor: colors.primaryRed + '15',
+    backgroundColor: colors.primaryRed + '10',
   },
   shareContactName: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     fontWeight: fontWeights.semibold,
     color: colors.textPrimary,
   },
@@ -1475,9 +1739,9 @@ const styles = StyleSheet.create({
     color: colors.primaryRed,
   },
   shareContactDetail: {
-    fontSize: fontSizes.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
+    fontSize: fontSizes.footnote,
+    color: colors.textTertiary,
+    marginTop: 3,
   },
   durationRow: {
     flexDirection: 'row',
@@ -1486,20 +1750,21 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   durationChip: {
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.full,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface2,
   },
   durationChipActive: {
     borderColor: colors.primaryRed,
-    backgroundColor: colors.primaryRed + '15',
+    backgroundColor: colors.primaryRed + '12',
   },
   durationChipText: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.footnote,
     color: colors.textSecondary,
+    fontWeight: fontWeights.medium,
   },
   durationChipTextActive: {
     color: colors.primaryRed,
@@ -1521,10 +1786,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: spacing.md,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface2,
   },
   sosRecipientInfo: {
     flex: 1,
@@ -1534,42 +1799,95 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
   },
   sosRemoveButtonText: {
-    fontSize: fontSizes.body,
-    color: colors.textSecondary,
-    fontWeight: fontWeights.semibold,
+    fontSize: fontSizes.caption,
+    color: colors.textTertiary,
+    fontWeight: fontWeights.medium,
   },
   walkWithMeEmpty: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     color: colors.textSecondary,
     marginBottom: spacing.md,
-    lineHeight: 22,
+    lineHeight: 21,
   },
   walkWithMeContactItem: {
     padding: spacing.md,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.sm,
     borderWidth: 1,
     borderColor: colors.border,
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface2,
     marginBottom: spacing.sm,
   },
   walkWithMeTapHint: {
-    fontSize: fontSizes.caption,
+    fontSize: fontSizes.footnote,
     color: colors.primaryRed,
     marginTop: spacing.xs,
   },
   addFromPhoneButton: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
+    borderRadius: borderRadius.sm,
     borderWidth: 1,
-    borderColor: colors.primaryRed,
+    borderColor: colors.primaryRed + '40',
     borderStyle: 'dashed',
     alignItems: 'center',
     marginBottom: spacing.md,
   },
   addFromPhoneButtonText: {
-    fontSize: fontSizes.body,
-    fontWeight: fontWeights.semibold,
+    fontSize: fontSizes.caption,
+    fontWeight: fontWeights.medium,
     color: colors.primaryRed,
   },
+  escortFormSection: {
+    marginBottom: spacing.xl,
+  },
+  escortFormLabel: {
+    fontSize: fontSizes.caption2,
+    fontWeight: fontWeights.semibold,
+    color: colors.textTertiary,
+    letterSpacing: letterSpacing.caps,
+    marginBottom: spacing.sm,
+  },
+  escortPriorityRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  escortPriorityButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface2,
+    alignItems: 'center',
+  },
+  escortPriorityActive: {
+    borderColor: colors.primaryRed + '60',
+    backgroundColor: colors.primaryRed + '10',
+  },
+  escortPriorityUrgentActive: {
+    borderColor: '#FF3B30' + '60',
+    backgroundColor: '#FF3B30' + '15',
+  },
+  escortPriorityText: {
+    fontSize: fontSizes.caption,
+    fontWeight: fontWeights.semibold,
+    color: colors.textSecondary,
+  },
+  escortPriorityTextActive: {
+    color: colors.primaryRed,
+  },
+  escortPriorityUrgentText: {
+    color: '#FF3B30',
+  },
+  escortReasonInput: {
+    backgroundColor: colors.surface2,
+    borderRadius: borderRadius.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
+    padding: spacing.md,
+    fontSize: fontSizes.body,
+    color: colors.textPrimary,
+    minHeight: 100,
+  },
 });
+

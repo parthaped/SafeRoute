@@ -9,6 +9,8 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -18,7 +20,7 @@ import { SafeRouteLogo } from '../components';
 import { PlusIcon, TrashIcon } from '../components/icons/Icons';
 import { colors } from '../theme/colors';
 import { spacing, borderRadius } from '../theme/spacing';
-import { fontSizes, fontWeights } from '../theme/typography';
+import { fontSizes, fontWeights, letterSpacing } from '../theme/typography';
 import * as Location from 'expo-location';
 import Svg, { Path, Circle } from 'react-native-svg';
 import {
@@ -29,6 +31,11 @@ import {
   isCommunityBackendAvailable,
   type CommunityPost,
 } from '../services/community';
+import {
+  OFFICER_REPORTS,
+  DEMO_COMMUNITY_POSTS,
+  type OfficerAlert,
+} from '../data/demoAlerts';
 
 type RootStackParamList = {
   Main: undefined;
@@ -80,6 +87,32 @@ function formatTimestamp(date: Date): string {
   return date.toLocaleDateString();
 }
 
+function OfficerBadge() {
+  return (
+    <View style={styles.officerBadge}>
+      <Svg width={12} height={12} viewBox="0 0 12 12">
+        <Path
+          d="M6 1L7.5 4.5H11L8.25 6.75L9.5 10.5L6 8.25L2.5 10.5L3.75 6.75L1 4.5H4.5L6 1Z"
+          fill={colors.primaryRed}
+        />
+      </Svg>
+      <Text style={styles.officerBadgeText}>RUPD</Text>
+    </View>
+  );
+}
+
+function PriorityIndicator({ priority }: { priority: string }) {
+  const colorMap: Record<string, string> = {
+    critical: '#E10600',
+    high: '#FF6B35',
+    medium: '#FFD60A',
+    low: '#2ECC71',
+  };
+  return (
+    <View style={[styles.priorityDot, { backgroundColor: colorMap[priority] ?? colors.textTertiary }]} />
+  );
+}
+
 export function CommunityScreen() {
   const navigation = useNavigation<CommunityNav>();
   const insets = useSafeAreaInsets();
@@ -92,7 +125,20 @@ export function CommunityScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'reports' | 'community'>('reports');
   const backendAvailable = isCommunityBackendAvailable();
+
+  const displayPosts: CommunityPost[] = posts.length > 0
+    ? posts
+    : DEMO_COMMUNITY_POSTS.map((p) => ({
+        id: p.id,
+        content: p.content,
+        type: p.type,
+        timestamp: p.timestamp,
+        verified: p.verified,
+        location: p.location,
+        authorId: p.authorId,
+      }));
 
   useEffect(() => {
     getDeviceUserId().then(setDeviceUserId);
@@ -217,154 +263,236 @@ export function CommunityScreen() {
         </View>
       )}
 
-      {/* Posts List — Safety Alerts */}
+      {/* Tab selector */}
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'reports' && styles.tabActive]}
+          onPress={() => setActiveTab('reports')}
+        >
+          <Text style={[styles.tabText, activeTab === 'reports' && styles.tabTextActive]}>
+            Official Reports
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === 'community' && styles.tabActive]}
+          onPress={() => setActiveTab('community')}
+        >
+          <Text style={[styles.tabText, activeTab === 'community' && styles.tabTextActive]}>
+            Community
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + spacing.lg }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.postsHeader}>
-          <Text style={styles.postsTitle}>Safety Alerts</Text>
-          <Text style={styles.postsSubtitle}>
-            Warnings and hazards others should be wary of. Share what to watch out for so the community can stay protected.
-          </Text>
-        </View>
+        {activeTab === 'reports' && (
+          <>
+            <View style={styles.postsHeader}>
+              <Text style={styles.postsTitle}>RUPD Reports</Text>
+              <Text style={styles.postsSubtitle}>
+                Official reports filed by Rutgers University Police. Stay informed about active incidents near you.
+              </Text>
+            </View>
 
-        {posts.map((post) => (
-          <View key={post.id} style={styles.postCard}>
-            <View style={styles.postHeader}>
-              <View style={styles.postHeaderLeft}>
-                <PostTypeIcon type={post.type} />
-                <View style={styles.postMeta}>
-                  {post.verified && <VerifiedBadge />}
-                  <Text style={styles.postTime}>{formatTimestamp(post.timestamp)}</Text>
+            {OFFICER_REPORTS.filter((r) => r.status !== 'resolved' && r.status !== 'unfounded').map((report) => (
+              <View key={report.id} style={styles.postCard}>
+                <View style={styles.postHeader}>
+                  <View style={styles.postHeaderLeft}>
+                    <PriorityIndicator priority={report.priority} />
+                    <View style={styles.postMeta}>
+                      <OfficerBadge />
+                      <Text style={styles.postTime}>{formatTimestamp(report.timestamp)}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.reportStatusBadge}>
+                    <Text style={styles.reportStatusText}>{report.status.replace('_', ' ')}</Text>
+                  </View>
+                </View>
+                <Text style={styles.officerReportTitle}>{report.title}</Text>
+                <Text style={styles.postContent}>{report.description}</Text>
+                <View style={styles.reportFooter}>
+                  <Text style={styles.postLocation}>📍 {report.locationName}</Text>
+                  <Text style={styles.officerNameText}>{report.officerName}</Text>
                 </View>
               </View>
-              {post.authorId === deviceUserId && (
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={() => handleDeletePost(post)}
-                  disabled={isDeletingId === post.id}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  accessibilityLabel="Delete your post"
-                >
-                  {isDeletingId === post.id ? (
-                    <ActivityIndicator size="small" color={colors.textTertiary} />
-                  ) : (
-                    <TrashIcon color={colors.textTertiary} />
-                  )}
-                </TouchableOpacity>
-              )}
-            </View>
-            <Text style={styles.postContent}>{post.content}</Text>
-            {post.location && (
-              <Text style={styles.postLocation}>
-                📍 Near {post.location.latitude.toFixed(4)}, {post.location.longitude.toFixed(4)}
-              </Text>
-            )}
-          </View>
-        ))}
+            ))}
 
-        {posts.length === 0 && !backendAvailable && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No safety alerts yet</Text>
-            <Text style={styles.emptyStateSubtext}>
-              Add Firebase config to sync with all users, then share what others should be wary of.
-            </Text>
-          </View>
+            {OFFICER_REPORTS.filter((r) => r.status === 'resolved').length > 0 && (
+              <>
+                <View style={styles.resolvedDivider}>
+                  <View style={styles.resolvedLine} />
+                  <Text style={styles.resolvedLabel}>Resolved</Text>
+                  <View style={styles.resolvedLine} />
+                </View>
+                {OFFICER_REPORTS.filter((r) => r.status === 'resolved').map((report) => (
+                  <View key={report.id} style={[styles.postCard, styles.resolvedCard]}>
+                    <View style={styles.postHeader}>
+                      <View style={styles.postHeaderLeft}>
+                        <PriorityIndicator priority="low" />
+                        <View style={styles.postMeta}>
+                          <OfficerBadge />
+                          <Text style={styles.postTime}>{formatTimestamp(report.timestamp)}</Text>
+                        </View>
+                      </View>
+                      <View style={[styles.reportStatusBadge, styles.resolvedStatusBadge]}>
+                        <Text style={[styles.reportStatusText, styles.resolvedStatusText]}>resolved</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.officerReportTitle, { opacity: 0.6 }]}>{report.title}</Text>
+                    <Text style={[styles.postContent, { opacity: 0.5 }]}>{report.description}</Text>
+                    <Text style={[styles.postLocation, { opacity: 0.5 }]}>📍 {report.locationName}</Text>
+                  </View>
+                ))}
+              </>
+            )}
+          </>
         )}
-        {posts.length === 0 && backendAvailable && (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>No safety alerts yet</Text>
-            <Text style={styles.emptyStateSubtext}>
-              Be the first to warn others — tap + to share something people should watch out for.
-            </Text>
-          </View>
+
+        {activeTab === 'community' && (
+          <>
+            <View style={styles.postsHeader}>
+              <Text style={styles.postsTitle}>Safety Alerts</Text>
+              <Text style={styles.postsSubtitle}>
+                Warnings and hazards shared by the community. Share what to watch out for so others can stay protected.
+              </Text>
+            </View>
+
+            {displayPosts.map((post) => (
+              <View key={post.id} style={styles.postCard}>
+                <View style={styles.postHeader}>
+                  <View style={styles.postHeaderLeft}>
+                    <PostTypeIcon type={post.type} />
+                    <View style={styles.postMeta}>
+                      {post.verified && <VerifiedBadge />}
+                      <Text style={styles.postTime}>{formatTimestamp(post.timestamp)}</Text>
+                    </View>
+                  </View>
+                  {post.authorId === deviceUserId && (
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => handleDeletePost(post)}
+                      disabled={isDeletingId === post.id}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      accessibilityLabel="Delete your post"
+                    >
+                      {isDeletingId === post.id ? (
+                        <ActivityIndicator size="small" color={colors.textTertiary} />
+                      ) : (
+                        <TrashIcon color={colors.textTertiary} />
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <Text style={styles.postContent}>{post.content}</Text>
+                {post.location && (
+                  <Text style={styles.postLocation}>
+                    📍 Near {post.location.latitude.toFixed(4)}, {post.location.longitude.toFixed(4)}
+                  </Text>
+                )}
+              </View>
+            ))}
+
+            {displayPosts.length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyStateText}>No safety alerts yet</Text>
+                <Text style={styles.emptyStateSubtext}>
+                  Be the first to warn others — tap + to share something people should watch out for.
+                </Text>
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 
-      {/* New Post Modal */}
       <Modal
         visible={showNewPostModal}
         animationType="slide"
         transparent
         onRequestClose={() => setShowNewPostModal(false)}
       >
-        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
-          <BlurView intensity={95} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Share a safety alert</Text>
-              <TouchableOpacity
-                onPress={() => setShowNewPostModal(false)}
-                style={styles.closeButton}
-              >
-                <Text style={styles.closeButtonText}>✕</Text>
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+            <BlurView intensity={95} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Share a safety alert</Text>
+                <TouchableOpacity
+                  onPress={() => setShowNewPostModal(false)}
+                  style={styles.closeButton}
+                >
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
 
-            <View style={styles.typeSelector}>
+              <View style={styles.typeSelector}>
+                <TouchableOpacity
+                  style={[
+                    styles.typeButton,
+                    newPostType === 'positive' && styles.typeButtonActive,
+                  ]}
+                  onPress={() => setNewPostType('positive')}
+                >
+                  <Text
+                    style={[
+                      styles.typeButtonText,
+                      newPostType === 'positive' && styles.typeButtonTextActive,
+                    ]}
+                  >
+                    ✓ All clear
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.typeButton,
+                    newPostType === 'negative' && styles.typeButtonActive,
+                  ]}
+                  onPress={() => setNewPostType('negative')}
+                >
+                  <Text
+                    style={[
+                      styles.typeButtonText,
+                      newPostType === 'negative' && styles.typeButtonTextActive,
+                    ]}
+                  >
+                    ⚠ Be wary
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <TextInput
+                style={styles.postInput}
+                placeholder="Describe what others should watch out for (e.g. suspicious activity, poor lighting, hazard)..."
+                placeholderTextColor={colors.textTertiary}
+                value={newPostContent}
+                onChangeText={setNewPostContent}
+                multiline
+                numberOfLines={6}
+                textAlignVertical="top"
+              />
+
               <TouchableOpacity
                 style={[
-                  styles.typeButton,
-                  newPostType === 'positive' && styles.typeButtonActive,
+                  styles.submitButton,
+                  (!newPostContent.trim() || isSubmitting) && styles.submitButtonDisabled,
                 ]}
-                onPress={() => setNewPostType('positive')}
+                onPress={handleCreatePost}
+                disabled={!newPostContent.trim() || isSubmitting}
               >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    newPostType === 'positive' && styles.typeButtonTextActive,
-                  ]}
-                >
-                  ✓ All clear
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.typeButton,
-                  newPostType === 'negative' && styles.typeButtonActive,
-                ]}
-                onPress={() => setNewPostType('negative')}
-              >
-                <Text
-                  style={[
-                    styles.typeButtonText,
-                    newPostType === 'negative' && styles.typeButtonTextActive,
-                  ]}
-                >
-                  ⚠ Be wary
-                </Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <Text style={styles.submitButtonText}>Warn community</Text>
+                )}
               </TouchableOpacity>
             </View>
-
-            <TextInput
-              style={styles.postInput}
-              placeholder="Describe what others should watch out for (e.g. suspicious activity, poor lighting, hazard)..."
-              placeholderTextColor={colors.textTertiary}
-              value={newPostContent}
-              onChangeText={setNewPostContent}
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-            />
-
-            <TouchableOpacity
-              style={[
-                styles.submitButton,
-                (!newPostContent.trim() || isSubmitting) && styles.submitButtonDisabled,
-              ]}
-              onPress={handleCreatePost}
-              disabled={!newPostContent.trim() || isSubmitting}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <Text style={styles.submitButtonText}>Warn community</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
+          </SafeAreaView>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -377,7 +505,7 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: colors.background,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
   headerContent: {
@@ -385,17 +513,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    minHeight: 56,
+    paddingVertical: spacing.sm,
+    minHeight: 52,
   },
   backButton: {
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
   },
   backButtonText: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     color: colors.primaryRed,
-    fontWeight: fontWeights.semibold,
+    fontWeight: fontWeights.medium,
   },
   headerCenter: {
     flex: 1,
@@ -406,12 +534,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.xs,
     backgroundColor: colors.primaryRed,
     gap: spacing.xs,
   },
   newPostButtonText: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.footnote,
     color: colors.white,
     fontWeight: fontWeights.semibold,
   },
@@ -419,19 +547,19 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.lg,
     marginTop: spacing.sm,
     padding: spacing.md,
-    backgroundColor: colors.primaryRed + '20',
-    borderRadius: borderRadius.md,
+    backgroundColor: colors.primaryRed + '0C',
+    borderRadius: borderRadius.xs,
     borderWidth: 1,
-    borderColor: colors.primaryRed + '40',
+    borderColor: colors.primaryRed + '25',
   },
   configBannerText: {
-    fontSize: fontSizes.caption,
+    fontSize: fontSizes.footnote,
     color: colors.textSecondary,
     textAlign: 'center',
   },
   feedErrorBanner: {
-    backgroundColor: colors.primaryRed + '15',
-    borderColor: colors.primaryRed + '50',
+    backgroundColor: colors.primaryRed + '0A',
+    borderColor: colors.primaryRed + '30',
   },
   deleteButton: {
     padding: spacing.sm,
@@ -442,44 +570,46 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: spacing.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.primaryRed,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    elevation: 6,
+    shadowColor: colors.primaryRed,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     padding: spacing.lg,
-    gap: spacing.md,
+    paddingBottom: 120,
+    gap: spacing.sm,
   },
   postsHeader: {
     marginBottom: spacing.sm,
   },
   postsTitle: {
-    fontSize: fontSizes.title2,
+    fontSize: fontSizes.title3,
     fontWeight: fontWeights.bold,
     color: colors.textPrimary,
+    letterSpacing: letterSpacing.tight,
     marginBottom: spacing.xs,
   },
   postsSubtitle: {
     fontSize: fontSizes.footnote,
-    color: colors.textSecondary,
-    lineHeight: 20,
+    color: colors.textTertiary,
+    lineHeight: 19,
   },
   postCard: {
-    backgroundColor: colors.cardBackground,
-    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surface1,
+    borderRadius: borderRadius.md,
     padding: spacing.lg,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   postHeader: {
@@ -502,76 +632,178 @@ const styles = StyleSheet.create({
   verifiedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: spacing.xs,
+    gap: 3,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.secondaryGreen + '20',
+    borderRadius: borderRadius.xs,
+    backgroundColor: colors.secondaryGreen + '15',
   },
   verifiedText: {
-    fontSize: fontSizes.caption,
+    fontSize: fontSizes.caption2,
     color: colors.secondaryGreen,
     fontWeight: fontWeights.semibold,
   },
   postTime: {
-    fontSize: fontSizes.caption,
+    fontSize: fontSizes.caption2,
     color: colors.textTertiary,
   },
   postContent: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     color: colors.textPrimary,
-    lineHeight: 22,
+    lineHeight: 21,
     marginBottom: spacing.xs,
   },
   postLocation: {
-    fontSize: fontSizes.caption,
+    fontSize: fontSizes.footnote,
     color: colors.textTertiary,
     marginTop: spacing.xs,
   },
   typeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: borderRadius.md,
+    width: 30,
+    height: 30,
+    borderRadius: borderRadius.xs,
     alignItems: 'center',
     justifyContent: 'center',
   },
   typeIconPositive: {
-    backgroundColor: colors.secondaryGreen + '30',
+    backgroundColor: colors.secondaryGreen + '18',
   },
   typeIconNegative: {
-    backgroundColor: colors.primaryRed + '30',
+    backgroundColor: colors.primaryRed + '18',
   },
   typeIconText: {
-    fontSize: fontSizes.title3,
+    fontSize: fontSizes.body,
     fontWeight: fontWeights.bold,
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.xxl,
+    paddingVertical: spacing.xxxl,
   },
   emptyStateText: {
-    fontSize: fontSizes.title3,
-    fontWeight: fontWeights.bold,
+    fontSize: fontSizes.body,
+    fontWeight: fontWeights.semibold,
     color: colors.textPrimary,
     marginBottom: spacing.xs,
   },
   emptyStateSubtext: {
-    fontSize: fontSizes.body,
-    color: colors.textSecondary,
+    fontSize: fontSizes.caption,
+    color: colors.textTertiary,
     textAlign: 'center',
+  },
+  tabBar: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.lg,
+    gap: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  tab: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  tabActive: {
+    borderBottomColor: colors.primaryRed,
+  },
+  tabText: {
+    fontSize: fontSizes.caption,
+    fontWeight: fontWeights.medium,
+    color: colors.textTertiary,
+  },
+  tabTextActive: {
+    color: colors.textPrimary,
+    fontWeight: fontWeights.semibold,
+  },
+  officerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: borderRadius.xs,
+    backgroundColor: colors.primaryRed + '12',
+  },
+  officerBadgeText: {
+    fontSize: fontSizes.caption2,
+    color: colors.primaryRed,
+    fontWeight: fontWeights.bold,
+    letterSpacing: letterSpacing.wide,
+  },
+  priorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  officerReportTitle: {
+    fontSize: fontSizes.caption,
+    fontWeight: fontWeights.semibold,
+    color: colors.textPrimary,
+    letterSpacing: letterSpacing.tight,
+    marginBottom: 3,
+  },
+  reportStatusBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.xs,
+    backgroundColor: 'rgba(255,107,53,0.10)',
+  },
+  reportStatusText: {
+    fontSize: fontSizes.caption2,
+    fontWeight: fontWeights.medium,
+    color: '#FF6B35',
+    textTransform: 'capitalize',
+  },
+  resolvedStatusBadge: {
+    backgroundColor: 'rgba(46,204,113,0.10)',
+  },
+  resolvedStatusText: {
+    color: colors.secondaryGreen,
+  },
+  reportFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  officerNameText: {
+    fontSize: fontSizes.footnote,
+    color: colors.textTertiary,
+  },
+  resolvedCard: {
+    opacity: 0.5,
+  },
+  resolvedDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginVertical: spacing.md,
+  },
+  resolvedLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+  },
+  resolvedLabel: {
+    fontSize: fontSizes.caption2,
+    color: colors.textTertiary,
+    fontWeight: fontWeights.medium,
+    textTransform: 'uppercase',
+    letterSpacing: letterSpacing.caps,
   },
   modalContainer: {
     flex: 1,
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface1,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+    padding: spacing.xxl,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
     borderBottomWidth: 0,
   },
   modalHeader: {
@@ -581,54 +813,57 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   modalTitle: {
-    fontSize: fontSizes.title2,
+    fontSize: fontSizes.title3,
     fontWeight: fontWeights.bold,
     color: colors.textPrimary,
+    letterSpacing: letterSpacing.tight,
   },
   closeButton: {
-    width: 32,
-    height: 32,
+    width: 30,
+    height: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.border,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   closeButtonText: {
-    fontSize: fontSizes.title3,
-    color: colors.textPrimary,
+    fontSize: 16,
+    color: colors.textSecondary,
   },
   typeSelector: {
     flexDirection: 'row',
-    gap: spacing.md,
+    gap: spacing.sm,
     marginBottom: spacing.lg,
   },
   typeButton: {
     flex: 1,
     paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.md,
-    borderWidth: 2,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.xs,
+    borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: colors.surface2,
   },
   typeButtonActive: {
     borderColor: colors.primaryRed,
-    backgroundColor: colors.primaryRed + '20',
+    backgroundColor: colors.primaryRed + '12',
   },
   typeButtonText: {
-    fontSize: fontSizes.body,
-    fontWeight: fontWeights.semibold,
+    fontSize: fontSizes.caption,
+    fontWeight: fontWeights.medium,
     color: colors.textSecondary,
   },
   typeButtonTextActive: {
     color: colors.primaryRed,
+    fontWeight: fontWeights.semibold,
   },
   postInput: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    fontSize: fontSizes.body,
+    backgroundColor: colors.surface2,
+    borderRadius: borderRadius.xs,
+    padding: spacing.lg,
+    fontSize: fontSizes.caption,
     color: colors.textPrimary,
     minHeight: 120,
     borderWidth: 1,
@@ -637,18 +872,19 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     backgroundColor: colors.primaryRed,
-    borderRadius: borderRadius.md,
-    paddingVertical: spacing.md,
+    borderRadius: borderRadius.sm,
+    paddingVertical: 14,
     paddingHorizontal: spacing.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },
   submitButtonDisabled: {
-    opacity: 0.5,
+    opacity: 0.4,
   },
   submitButtonText: {
-    fontSize: fontSizes.body,
-    fontWeight: fontWeights.bold,
+    fontSize: fontSizes.caption,
+    fontWeight: fontWeights.semibold,
     color: colors.white,
+    letterSpacing: 0.3,
   },
 });

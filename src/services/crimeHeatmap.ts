@@ -4,6 +4,10 @@
  */
 
 import type { LatLng } from './directions';
+import {
+  ACTIVE_HAZARD_ZONES,
+  LIGHTING_CONDITIONS,
+} from '../data/demoAlerts';
 
 export type WeightedLatLng = LatLng & { weight?: number };
 
@@ -49,6 +53,7 @@ export function getHeatmapPoints(): WeightedLatLng[] {
 
 const CELL_SIZE = 0.0003;
 const DANGER_THRESHOLD = 50;
+const SAFETY_PENALTY_MAX = 12;
 
 type CellKey = string;
 function cellKey(lat: number, lng: number): CellKey {
@@ -57,7 +62,11 @@ function cellKey(lat: number, lng: number): CellKey {
   return `${i},${j}`;
 }
 
+let _dangerCellsCache: Map<CellKey, number> | null = null;
+let _maxCellSumCache: number | null = null;
+
 function getDangerCells(): Map<CellKey, number> {
+  if (_dangerCellsCache) return _dangerCellsCache;
   const data = getCrimeData();
   const sumByCell = new Map<CellKey, number>();
   for (const r of data) {
@@ -68,27 +77,35 @@ function getDangerCells(): Map<CellKey, number> {
   sumByCell.forEach((sum, key) => {
     if (sum >= DANGER_THRESHOLD) danger.set(key, sum);
   });
+  _dangerCellsCache = danger;
   return danger;
 }
 
 export type DangerZonePolygon = LatLng[];
-
-export function getDangerZonePolygons(): DangerZonePolygon[] {
-  return getDangerZonePolygonsWithScore().map((p) => p.coordinates);
-}
-
 export type DangerZoneWithScore = { coordinates: DangerZonePolygon; riskScore: number };
 
+let _polygonsCache: DangerZonePolygon[] | null = null;
+let _polygonsWithScoreCache: DangerZoneWithScore[] | null = null;
+
+export function getDangerZonePolygons(): DangerZonePolygon[] {
+  if (_polygonsCache) return _polygonsCache;
+  _polygonsCache = getDangerZonePolygonsWithScore().map((p) => p.coordinates);
+  return _polygonsCache;
+}
+
 function getMaxCellSum(): number {
+  if (_maxCellSumCache != null) return _maxCellSumCache;
   const cells = getDangerCells();
   let max = 0;
   cells.forEach((sum) => {
     if (sum > max) max = sum;
   });
-  return max || 100;
+  _maxCellSumCache = max || 100;
+  return _maxCellSumCache;
 }
 
 export function getDangerZonePolygonsWithScore(): DangerZoneWithScore[] {
+  if (_polygonsWithScoreCache) return _polygonsWithScoreCache;
   const cells = getDangerCells();
   const maxSum = getMaxCellSum();
   const polygons: DangerZoneWithScore[] = [];
@@ -108,24 +125,78 @@ export function getDangerZonePolygonsWithScore(): DangerZoneWithScore[] {
     const riskScore = Math.min(100, Math.round((sum / maxSum) * 100));
     polygons.push({ coordinates: coords, riskScore });
   });
+  _polygonsWithScoreCache = polygons;
   return polygons;
 }
 
-function isPointInDangerZone(lat: number, lng: number, polygons: DangerZonePolygon[]): boolean {
-  for (const poly of polygons) {
-    if (poly.length < 4) continue;
-    const lats = poly.map((p) => p.latitude);
-    const lngs = poly.map((p) => p.longitude);
-    const latMin = Math.min(...lats);
-    const latMax = Math.max(...lats);
-    const lngMin = Math.min(...lngs);
-    const lngMax = Math.max(...lngs);
-    if (lat >= latMin && lat <= latMax && lng >= lngMin && lng <= lngMax) return true;
+// ── Hazard zone + dark lighting avoidance ────────────────────────────────
+
+type HazardBBox = { latMin: number; latMax: number; lngMin: number; lngMax: number; label: string };
+
+let _hazardBBoxes: HazardBBox[] | null = null;
+function getHazardBBoxes(): HazardBBox[] {
+  if (_hazardBBoxes) return _hazardBBoxes;
+  _hazardBBoxes = ACTIVE_HAZARD_ZONES.map((zone) => {
+    const lats = zone.polygon.map((p) => p.latitude);
+    const lngs = zone.polygon.map((p) => p.longitude);
+    return {
+      latMin: Math.min(...lats),
+      latMax: Math.max(...lats),
+      lngMin: Math.min(...lngs),
+      lngMax: Math.max(...lngs),
+      label: zone.label,
+    };
+  });
+  return _hazardBBoxes;
+}
+
+const DARK_LIGHT_RADIUS_DEG = 0.0003;
+let _darkLightZones: { lat: number; lng: number; label: string }[] | null = null;
+function getDarkLightZones(): { lat: number; lng: number; label: string }[] {
+  if (_darkLightZones) return _darkLightZones;
+  _darkLightZones = LIGHTING_CONDITIONS
+    .filter((l) => l.condition === 'dark')
+    .map((l) => ({ lat: l.location.latitude, lng: l.location.longitude, label: l.label }));
+  return _darkLightZones;
+}
+
+function isPointInHazardZone(lat: number, lng: number): boolean {
+  for (const bbox of getHazardBBoxes()) {
+    if (lat >= bbox.latMin && lat <= bbox.latMax && lng >= bbox.lngMin && lng <= bbox.lngMax) return true;
+  }
+  for (const dark of getDarkLightZones()) {
+    const dlat = lat - dark.lat;
+    const dlng = lng - dark.lng;
+    if (dlat * dlat + dlng * dlng <= DARK_LIGHT_RADIUS_DEG * DARK_LIGHT_RADIUS_DEG) return true;
   }
   return false;
 }
 
-const ROUTE_SAMPLE_STEP_DEG = 0.0001;
+function getHazardPenaltyAt(lat: number, lng: number): number {
+  let penalty = 0;
+  for (const bbox of getHazardBBoxes()) {
+    if (lat >= bbox.latMin && lat <= bbox.latMax && lng >= bbox.lngMin && lng <= bbox.lngMax) {
+      penalty = Math.max(penalty, SAFETY_PENALTY_MAX * 0.6);
+    }
+  }
+  for (const dark of getDarkLightZones()) {
+    const dlat = lat - dark.lat;
+    const dlng = lng - dark.lng;
+    const distSq = dlat * dlat + dlng * dlng;
+    const radiusSq = DARK_LIGHT_RADIUS_DEG * DARK_LIGHT_RADIUS_DEG;
+    if (distSq <= radiusSq) {
+      penalty = Math.max(penalty, SAFETY_PENALTY_MAX * 0.35 * (1 - distSq / radiusSq));
+    }
+  }
+  return penalty;
+}
+
+/** O(1) cell-based check: is this point in a danger cell? */
+function isPointInDangerCell(lat: number, lng: number, dangerCells: Map<CellKey, number>): boolean {
+  return dangerCells.has(cellKey(lat, lng));
+}
+
+const ROUTE_SAMPLE_STEP_DEG = 0.0002;
 function denseRouteSample(coordinates: LatLng[]): LatLng[] {
   if (coordinates.length < 2) return coordinates;
   const out: LatLng[] = [];
@@ -150,10 +221,11 @@ function denseRouteSample(coordinates: LatLng[]): LatLng[] {
 }
 
 export function doesRouteIntersectDangerZones(routeCoordinates: LatLng[]): boolean {
-  const polygons = getDangerZonePolygons();
+  const dangerCells = getDangerCells();
   const sampled = denseRouteSample(routeCoordinates);
   for (const p of sampled) {
-    if (isPointInDangerZone(p.latitude, p.longitude, polygons)) return true;
+    if (dangerCells.size > 0 && isPointInDangerCell(p.latitude, p.longitude, dangerCells)) return true;
+    if (isPointInHazardZone(p.latitude, p.longitude)) return true;
   }
   return false;
 }
@@ -184,13 +256,41 @@ export function getRouteSafetyScore(routeCoordinates: LatLng[]): number {
     const lenM = haversineMetersSafe(a, b);
     const midLat = (a.latitude + b.latitude) / 2;
     const midLng = (a.longitude + b.longitude) / 2;
-    const danger = getDangerWeightAt(midLat, midLng);
-    score += lenM * danger;
+    const crimeDanger = getDangerWeightAt(midLat, midLng);
+    const hazardDanger = getHazardPenaltyAt(midLat, midLng);
+    score += lenM * Math.max(crimeDanger, hazardDanger);
   }
   return score;
 }
 
-const AVOIDANCE_OFFSET_DEG = 0.005;
+const AVOIDANCE_OFFSET_DEG = 0.002;
+
+/**
+ * Merge nearby zones into clusters so we don't flood the Directions API
+ * with dozens of waypoints for individual crime cells.
+ */
+function clusterZones(
+  zones: { latMin: number; latMax: number; lngMin: number; lngMax: number }[]
+): { latMin: number; latMax: number; lngMin: number; lngMax: number }[] {
+  if (zones.length === 0) return [];
+  const MERGE_GAP = 0.002;
+  const sorted = [...zones].sort((a, b) => a.latMin - b.latMin || a.lngMin - b.lngMin);
+  const clusters = [{ ...sorted[0] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const z = sorted[i];
+    const last = clusters[clusters.length - 1];
+    if (z.latMin <= last.latMax + MERGE_GAP && z.lngMin <= last.lngMax + MERGE_GAP &&
+        z.lngMax >= last.lngMin - MERGE_GAP) {
+      last.latMin = Math.min(last.latMin, z.latMin);
+      last.latMax = Math.max(last.latMax, z.latMax);
+      last.lngMin = Math.min(last.lngMin, z.lngMin);
+      last.lngMax = Math.max(last.lngMax, z.lngMax);
+    } else {
+      clusters.push({ ...z });
+    }
+  }
+  return clusters;
+}
 
 export function getAvoidanceWaypoints(
   origin: LatLng,
@@ -198,40 +298,65 @@ export function getAvoidanceWaypoints(
   routeCoordinates: LatLng[],
   maxWaypoints: number = 5
 ): LatLng[] {
-  const polygons = getDangerZonePolygons();
   const sampled = denseRouteSample(routeCoordinates);
   const withOrder: { index: number; waypoint: LatLng }[] = [];
   const half = sampled.length / 2;
 
-  for (const poly of polygons) {
+  const rawZones: { latMin: number; latMax: number; lngMin: number; lngMax: number }[] = [];
+
+  for (const poly of getDangerZonePolygons()) {
     if (poly.length < 4) continue;
-    const latMin = Math.min(...poly.map((p) => p.latitude));
-    const latMax = Math.max(...poly.map((p) => p.latitude));
-    const lngMin = Math.min(...poly.map((p) => p.longitude));
-    const lngMax = Math.max(...poly.map((p) => p.longitude));
-    const centerLat = (latMin + latMax) / 2;
-    const centerLng = (lngMin + lngMax) / 2;
+    rawZones.push({
+      latMin: Math.min(...poly.map((p) => p.latitude)),
+      latMax: Math.max(...poly.map((p) => p.latitude)),
+      lngMin: Math.min(...poly.map((p) => p.longitude)),
+      lngMax: Math.max(...poly.map((p) => p.longitude)),
+    });
+  }
+
+  for (const bbox of getHazardBBoxes()) {
+    rawZones.push(bbox);
+  }
+
+  for (const dark of getDarkLightZones()) {
+    rawZones.push({
+      latMin: dark.lat - DARK_LIGHT_RADIUS_DEG,
+      latMax: dark.lat + DARK_LIGHT_RADIUS_DEG,
+      lngMin: dark.lng - DARK_LIGHT_RADIUS_DEG,
+      lngMax: dark.lng + DARK_LIGHT_RADIUS_DEG,
+    });
+  }
+
+  const allZones = clusterZones(rawZones);
+
+  for (const zone of allZones) {
+    const centerLat = (zone.latMin + zone.latMax) / 2;
+    const centerLng = (zone.lngMin + zone.lngMax) / 2;
 
     let firstHitIndex = -1;
     for (let i = 0; i < sampled.length; i++) {
       const p = sampled[i];
-      if (p.latitude >= latMin && p.latitude <= latMax && p.longitude >= lngMin && p.longitude <= lngMax) {
+      if (p.latitude >= zone.latMin && p.latitude <= zone.latMax && p.longitude >= zone.lngMin && p.longitude <= zone.lngMax) {
         firstHitIndex = i;
         break;
       }
     }
     if (firstHitIndex < 0) continue;
 
+    const perpLat = -(zone.lngMax - zone.lngMin);
+    const perpLng = zone.latMax - zone.latMin;
+    const perpLen = Math.sqrt(perpLat * perpLat + perpLng * perpLng) || 1;
+
     const useDestSide = firstHitIndex >= half;
     const refLat = useDestSide ? destination.latitude : origin.latitude;
     const refLng = useDestSide ? destination.longitude : origin.longitude;
-    const dLat = centerLat - refLat;
-    const dLng = centerLng - refLng;
-    const dist = Math.sqrt(dLat * dLat + dLng * dLng) || 1;
-    const uLat = dLat / dist;
-    const uLng = dLng / dist;
-    const wpLat = centerLat - uLat * AVOIDANCE_OFFSET_DEG;
-    const wpLng = centerLng - uLng * AVOIDANCE_OFFSET_DEG;
+
+    const toRef = { lat: refLat - centerLat, lng: refLng - centerLng };
+    const dot = toRef.lat * (perpLat / perpLen) + toRef.lng * (perpLng / perpLen);
+    const sign = dot >= 0 ? 1 : -1;
+
+    const wpLat = centerLat + sign * (perpLat / perpLen) * AVOIDANCE_OFFSET_DEG;
+    const wpLng = centerLng + sign * (perpLng / perpLen) * AVOIDANCE_OFFSET_DEG;
     withOrder.push({ index: firstHitIndex, waypoint: { latitude: wpLat, longitude: wpLng } });
   }
 
@@ -279,6 +404,30 @@ export function getDangerZoneSummariesForRoute(routeCoordinates: LatLng[]): Dang
         : 'Elevated crime reports in this area';
     result.push({ areaName, crimeTypes, reason });
   });
+
+  const hitHazards = new Set<string>();
+  const hitDarkAreas = new Set<string>();
+  for (const p of sampled) {
+    for (const bbox of getHazardBBoxes()) {
+      if (p.latitude >= bbox.latMin && p.latitude <= bbox.latMax && p.longitude >= bbox.lngMin && p.longitude <= bbox.lngMax) {
+        hitHazards.add(bbox.label);
+      }
+    }
+    for (const dark of getDarkLightZones()) {
+      const dlat = p.latitude - dark.lat;
+      const dlng = p.longitude - dark.lng;
+      if (dlat * dlat + dlng * dlng <= DARK_LIGHT_RADIUS_DEG * DARK_LIGHT_RADIUS_DEG) {
+        hitDarkAreas.add(dark.label);
+      }
+    }
+  }
+  for (const label of hitHazards) {
+    result.push({ areaName: label, crimeTypes: [], reason: 'Active RUPD hazard zone' });
+  }
+  for (const label of hitDarkAreas) {
+    result.push({ areaName: label, crimeTypes: [], reason: 'Lighting outage — dark area' });
+  }
+
   return result;
 }
 
@@ -328,10 +477,9 @@ function haversineMeters(a: LatLng, b: LatLng): number {
   return R * c;
 }
 
-const ROUTING_GRID_STEP = 0.0009;
-const ROUTING_PADDING_CELLS = 3;
-const SAFETY_PENALTY_MAX = 35;
-const PROXIMITY_CELLS = 2;
+const ROUTING_GRID_STEP = 0.0012;
+const ROUTING_PADDING_CELLS = 2;
+const PROXIMITY_CELLS = 1;
 
 function getDangerWeightAt(lat: number, lng: number): number {
   const key = cellKey(lat, lng);
@@ -342,31 +490,32 @@ function getDangerWeightAt(lat: number, lng: number): number {
   const ci = Math.floor(lat / step);
   const cj = Math.floor(lng / step);
 
+  let crimePenalty = 0;
   if (sum != null && maxSum > 0) {
-    return (sum / maxSum) * SAFETY_PENALTY_MAX;
-  }
-  let proximityPenalty = 0;
-  for (let di = -PROXIMITY_CELLS; di <= PROXIMITY_CELLS; di++) {
-    for (let dj = -PROXIMITY_CELLS; dj <= PROXIMITY_CELLS; dj++) {
-      if (di === 0 && dj === 0) continue;
-      const nKey = `${ci + di},${cj + dj}`;
-      const nSum = dangerCells.get(nKey);
-      if (nSum != null && maxSum > 0) {
-        const dist = Math.max(1, Math.sqrt(di * di + dj * dj));
-        proximityPenalty = Math.max(proximityPenalty, (nSum / maxSum) * (SAFETY_PENALTY_MAX * 0.4) / dist);
+    crimePenalty = (sum / maxSum) * SAFETY_PENALTY_MAX;
+  } else {
+    for (let di = -PROXIMITY_CELLS; di <= PROXIMITY_CELLS; di++) {
+      for (let dj = -PROXIMITY_CELLS; dj <= PROXIMITY_CELLS; dj++) {
+        if (di === 0 && dj === 0) continue;
+        const nKey = `${ci + di},${cj + dj}`;
+        const nSum = dangerCells.get(nKey);
+        if (nSum != null && maxSum > 0) {
+          const dist = Math.max(1, Math.sqrt(di * di + dj * dj));
+          crimePenalty = Math.max(crimePenalty, (nSum / maxSum) * (SAFETY_PENALTY_MAX * 0.4) / dist);
+        }
       }
     }
   }
-  return proximityPenalty;
+  const hazardPenalty = getHazardPenaltyAt(lat, lng);
+  return Math.max(crimePenalty, hazardPenalty);
 }
 
 function getGridBounds(origin: LatLng, destination: LatLng): { iMin: number; iMax: number; jMin: number; jMax: number } {
-  const polygons = getDangerZonePolygons();
   let latMin = Math.min(origin.latitude, destination.latitude);
   let latMax = Math.max(origin.latitude, destination.latitude);
   let lngMin = Math.min(origin.longitude, destination.longitude);
   let lngMax = Math.max(origin.longitude, destination.longitude);
-  for (const poly of polygons) {
+  for (const poly of getDangerZonePolygons()) {
     if (poly.length < 4) continue;
     for (const p of poly) {
       latMin = Math.min(latMin, p.latitude);
@@ -374,6 +523,12 @@ function getGridBounds(origin: LatLng, destination: LatLng): { iMin: number; iMa
       lngMin = Math.min(lngMin, p.longitude);
       lngMax = Math.max(lngMax, p.longitude);
     }
+  }
+  for (const bbox of getHazardBBoxes()) {
+    latMin = Math.min(latMin, bbox.latMin);
+    latMax = Math.max(latMax, bbox.latMax);
+    lngMin = Math.min(lngMin, bbox.lngMin);
+    lngMax = Math.max(lngMax, bbox.lngMax);
   }
   const step = ROUTING_GRID_STEP;
   const iMin = Math.floor(latMin / step) - ROUTING_PADDING_CELLS;
@@ -403,19 +558,64 @@ const NEIGHBORS = [
   [-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1],
 ];
 
+type HeapNode = { i: number; j: number; f: number };
+
+class MinHeap {
+  private data: HeapNode[] = [];
+  get size() { return this.data.length; }
+  push(node: HeapNode) {
+    this.data.push(node);
+    this._bubbleUp(this.data.length - 1);
+  }
+  pop(): HeapNode | undefined {
+    const top = this.data[0];
+    const last = this.data.pop();
+    if (this.data.length > 0 && last) {
+      this.data[0] = last;
+      this._sinkDown(0);
+    }
+    return top;
+  }
+  private _bubbleUp(idx: number) {
+    const d = this.data;
+    while (idx > 0) {
+      const parent = (idx - 1) >> 1;
+      if (d[parent].f <= d[idx].f) break;
+      [d[parent], d[idx]] = [d[idx], d[parent]];
+      idx = parent;
+    }
+  }
+  private _sinkDown(idx: number) {
+    const d = this.data;
+    const n = d.length;
+    while (true) {
+      let smallest = idx;
+      const l = 2 * idx + 1;
+      const r = 2 * idx + 2;
+      if (l < n && d[l].f < d[smallest].f) smallest = l;
+      if (r < n && d[r].f < d[smallest].f) smallest = r;
+      if (smallest === idx) break;
+      [d[smallest], d[idx]] = [d[idx], d[smallest]];
+      idx = smallest;
+    }
+  }
+}
+
 /** Single run: Dijkstra (useHeuristic=false) or A* (useHeuristic=true). Returns path and cost at goal. */
 function runPathfind(
   origin: LatLng,
   destination: LatLng,
   useHeuristic: boolean
 ): { path: LatLng[]; cost: number } {
+  const dangerCells = getDangerCells();
+  const maxSum = getMaxCellSum();
   const bounds = getGridBounds(origin, destination);
   const start = latLngToCell(origin.latitude, origin.longitude);
   const end = latLngToCell(destination.latitude, destination.longitude);
   const nodeKey = (i: number, j: number) => `${i},${j}`;
   const gScore = new Map<string, number>();
   const prev = new Map<string, { i: number; j: number }>();
-  const pq: { i: number; j: number; f: number }[] = [];
+  const pq = new MinHeap();
   const startKey = nodeKey(start.i, start.j);
   gScore.set(startKey, 0);
   const h0 = useHeuristic ? haversineMeters(cellToLatLng(start.i, start.j), destination) : 0;
@@ -423,22 +623,46 @@ function runPathfind(
 
   const endKey = nodeKey(end.i, end.j);
   let iterations = 0;
-  const maxIterations = 50000;
+  const maxIterations = 15000;
   let goalCost = Infinity;
 
-  while (pq.length > 0 && iterations < maxIterations) {
+  const dangerWeightFast = (lat: number, lng: number): number => {
+    let crimePenalty = 0;
+    const key = cellKey(lat, lng);
+    const sum = dangerCells.get(key);
+    if (sum != null && maxSum > 0) {
+      crimePenalty = (sum / maxSum) * SAFETY_PENALTY_MAX;
+    } else {
+      const step = ROUTING_GRID_STEP;
+      const ci = Math.floor(lat / step);
+      const cj = Math.floor(lng / step);
+      for (let di = -PROXIMITY_CELLS; di <= PROXIMITY_CELLS; di++) {
+        for (let dj = -PROXIMITY_CELLS; dj <= PROXIMITY_CELLS; dj++) {
+          if (di === 0 && dj === 0) continue;
+          const nKey = `${ci + di},${cj + dj}`;
+          const nSum = dangerCells.get(nKey);
+          if (nSum != null && maxSum > 0) {
+            const dist = Math.max(1, Math.sqrt(di * di + dj * dj));
+            crimePenalty = Math.max(crimePenalty, (nSum / maxSum) * (SAFETY_PENALTY_MAX * 0.4) / dist);
+          }
+        }
+      }
+    }
+    const hazardPenalty = getHazardPenaltyAt(lat, lng);
+    return Math.max(crimePenalty, hazardPenalty);
+  };
+
+  while (pq.size > 0 && iterations < maxIterations) {
     iterations++;
-    pq.sort((a, b) => a.f - b.f);
-    const u = pq.shift()!;
+    const u = pq.pop()!;
     const uKey = nodeKey(u.i, u.j);
     if (uKey === endKey) {
       goalCost = gScore.get(uKey) ?? Infinity;
       break;
     }
     const gu = gScore.get(uKey) ?? Infinity;
-    const uCenter = cellToLatLng(u.i, u.j);
-    const hU = useHeuristic ? haversineMeters(uCenter, destination) : 0;
-    if (useHeuristic && u.f > gu + hU) continue;
+    const hU = useHeuristic ? haversineMeters(cellToLatLng(u.i, u.j), destination) : 0;
+    if (u.f > gu + hU * 1.2) continue;
 
     const fromCenter = cellToLatLng(u.i, u.j);
     for (const [di, dj] of NEIGHBORS) {
@@ -446,7 +670,7 @@ function runPathfind(
       const vj = u.j + dj;
       if (vi < bounds.iMin || vi > bounds.iMax || vj < bounds.jMin || vj > bounds.jMax) continue;
       const vCenter = cellToLatLng(vi, vj);
-      const danger = getDangerWeightAt(vCenter.latitude, vCenter.longitude);
+      const danger = dangerWeightFast(vCenter.latitude, vCenter.longitude);
       const edgeMeters = haversineMeters(fromCenter, vCenter);
       const cost = edgeMeters * (1 + danger);
       const vKey = nodeKey(vi, vj);
@@ -491,7 +715,7 @@ function pathToWaypoints(
   return waypoints;
 }
 
-const MAX_PATH_LENGTH_RATIO = 2.5;
+const MAX_PATH_LENGTH_RATIO = 1.6;
 
 /**
  * Combined Dijkstra + A*: run both on the same grid (cost = distance × (1 + danger)),
@@ -517,17 +741,21 @@ export function getSafeRouteWaypointsDijkstra(
   const validD = valid(pathD);
   const validA = valid(pathA);
 
+  const blendedScore = (p: LatLng[]) => {
+    const dist = pathLength(p);
+    const safety = getRouteSafetyScore(p);
+    return dist + safety * 0.5;
+  };
+
   let chosen: LatLng[];
   if (validD && validA) {
-    const safetyD = getRouteSafetyScore(pathD);
-    const safetyA = getRouteSafetyScore(pathA);
-    chosen = safetyD <= safetyA ? pathD : pathA;
+    chosen = blendedScore(pathD) <= blendedScore(pathA) ? pathD : pathA;
   } else if (validD) {
     chosen = pathD;
   } else if (validA) {
     chosen = pathA;
   } else {
-    return []; // both paths too long or unreachable
+    return [];
   }
 
   return pathToWaypoints(origin, chosen, maxWaypoints);

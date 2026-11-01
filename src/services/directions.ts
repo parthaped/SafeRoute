@@ -72,6 +72,18 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, '').trim();
 }
 
+/** Approximate distance in meters (Haversine). Used to pin route endpoints to exact origin/destination. */
+function distanceMeters(a: LatLng, b: LatLng): number {
+  const R = 6371000;
+  const φ1 = (a.latitude * Math.PI) / 180;
+  const φ2 = (b.latitude * Math.PI) / 180;
+  const Δφ = ((b.latitude - a.latitude) * Math.PI) / 180;
+  const Δλ = ((b.longitude - a.longitude) * Math.PI) / 180;
+  const x = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+  return R * c;
+}
+
 export type TravelMode = 'walking' | 'driving';
 
 /**
@@ -191,19 +203,59 @@ export async function fetchDirections(
     const legs = (route.legs || []) as Array<Record<string, unknown>>;
     if (legs.length === 0) return null;
 
-    const overviewPolyline = route.overview_polyline as { points?: string } | undefined;
-    const encoded = overviewPolyline?.points;
-    if (!encoded || typeof encoded !== 'string') {
-      return null;
+    // Build high-fidelity coordinates from per-step polylines (each step has its own
+    // encoded polyline that is far more precise than the simplified overview_polyline).
+    let coordinates: LatLng[] = [];
+    try {
+      for (const leg of legs) {
+        const legStepsRaw = (leg.steps || []) as Array<{ polyline?: { points?: string } }>;
+        for (const step of legStepsRaw) {
+          const pts = step.polyline?.points;
+          if (!pts || typeof pts !== 'string') continue;
+          const decoded = decodePolyline(pts);
+          if (decoded.length === 0) continue;
+          // Deduplicate junction point between consecutive steps
+          if (coordinates.length > 0) {
+            const prev = coordinates[coordinates.length - 1];
+            const next = decoded[0];
+            if (prev.latitude === next.latitude && prev.longitude === next.longitude) {
+              decoded.shift();
+            }
+          }
+          coordinates.push(...decoded);
+        }
+      }
+    } catch {
+      coordinates = [];
     }
 
-    let coordinates: LatLng[];
-    try {
-      coordinates = decodePolyline(encoded);
-    } catch {
-      return null;
+    // Fallback to overview_polyline if step-level decoding failed
+    if (coordinates.length === 0) {
+      const overviewPolyline = route.overview_polyline as { points?: string } | undefined;
+      const encoded = overviewPolyline?.points;
+      if (!encoded || typeof encoded !== 'string') return null;
+      try {
+        coordinates = decodePolyline(encoded);
+      } catch {
+        return null;
+      }
     }
     if (coordinates.length === 0) return null;
+
+    // Always pin route to exact origin/destination so the polyline visually
+    // starts at the origin marker and ends at the destination marker.
+    // Use a small threshold (3 m) only to avoid a duplicate point at the same pixel.
+    const DEDUP_M = 3;
+    if (distanceMeters(origin, coordinates[0]) > DEDUP_M) {
+      coordinates.unshift(origin);
+    } else {
+      coordinates[0] = origin;
+    }
+    if (distanceMeters(coordinates[coordinates.length - 1], destination) > DEDUP_M) {
+      coordinates.push(destination);
+    } else {
+      coordinates[coordinates.length - 1] = destination;
+    }
 
     // Merge steps and totals from all legs (origin → waypoint1 → … → destination)
     const steps: RouteStep[] = [];

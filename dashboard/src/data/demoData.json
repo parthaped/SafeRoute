@@ -1,0 +1,755 @@
+{
+  "_comment": "DEMO DATA — Remove once live sensors and database are connected. Timestamps use negative minutesAgo offsets, resolved at load time.",
+
+  "segments": [
+    {
+      "segmentId": "seg-college-ave",
+      "name": "College Ave — George St to Hamilton St",
+      "path": [
+        { "lat": 40.4985, "lng": -74.4480 },
+        { "lat": 40.5000, "lng": -74.4490 },
+        { "lat": 40.5040, "lng": -74.4520 }
+      ],
+      "score": 72,
+      "level": "high",
+      "factors": [
+        { "factor": "lighting", "label": "Lighting", "score": 82, "weight": 0.25 },
+        { "factor": "density", "label": "Pedestrian Density", "score": 35, "weight": 0.20 },
+        { "factor": "verified_reports", "label": "Verified Reports", "score": 88, "weight": 0.25 },
+        { "factor": "environmental", "label": "Environmental", "score": 40, "weight": 0.15 },
+        { "factor": "time_of_day", "label": "Time of Day", "score": 90, "weight": 0.15 }
+      ],
+      "minutesAgo": 4,
+      "decayRate": 0.3
+    },
+    {
+      "segmentId": "seg-easton-ave",
+      "name": "Easton Ave Corridor",
+      "path": [
+        { "lat": 40.5015, "lng": -74.4465 },
+        { "lat": 40.5030, "lng": -74.4490 }
+      ],
+      "score": 58,
+      "level": "medium",
+      "factors": [
+        { "factor": "lighting", "label": "Lighting", "score": 55, "weight": 0.25 },
+        { "factor": "density", "label": "Pedestrian Density", "score": 60, "weight": 0.20 },
+        { "factor": "verified_reports", "label": "Verified Reports", "score": 62, "weight": 0.25 },
+        { "factor": "environmental", "label": "Environmental", "score": 30, "weight": 0.15 },
+        { "factor": "time_of_day", "label": "Time of Day", "score": 70, "weight": 0.15 }
+      ],
+      "minutesAgo": 8,
+      "decayRate": 0.25
+    },
+    {
+      "segmentId": "seg-busch-allison",
+      "name": "Allison Rd — Busch Campus",
+      "path": [
+        { "lat": 40.5210, "lng": -74.4625 },
+        { "lat": 40.5235, "lng": -74.4600 }
+      ],
+      "score": 38,
+      "level": "medium",
+      "factors": [
+        { "factor": "lighting", "label": "Lighting", "score": 45, "weight": 0.25 },
+        { "factor": "density", "label": "Pedestrian Density", "score": 22, "weight": 0.20 },
+        { "factor": "verified_reports", "label": "Verified Reports", "score": 30, "weight": 0.25 },
+        { "factor": "environmental", "label": "Environmental", "score": 50, "weight": 0.15 },
+        { "factor": "time_of_day", "label": "Time of Day", "score": 55, "weight": 0.15 }
+      ],
+      "minutesAgo": 12,
+      "decayRate": 0.20
+    },
+    {
+      "segmentId": "seg-george-st",
+      "name": "George St Underpass",
+      "path": [
+        { "lat": 40.4972, "lng": -74.4448 },
+        { "lat": 40.4980, "lng": -74.4460 }
+      ],
+      "score": 85,
+      "level": "high",
+      "factors": [
+        { "factor": "lighting", "label": "Lighting", "score": 95, "weight": 0.25 },
+        { "factor": "density", "label": "Pedestrian Density", "score": 18, "weight": 0.20 },
+        { "factor": "verified_reports", "label": "Verified Reports", "score": 78, "weight": 0.25 },
+        { "factor": "sensor_anomaly", "label": "Sensor Anomaly", "score": 92, "weight": 0.15 },
+        { "factor": "time_of_day", "label": "Time of Day", "score": 95, "weight": 0.15 }
+      ],
+      "minutesAgo": 2,
+      "decayRate": 0.35
+    },
+    {
+      "segmentId": "seg-livi-plaza",
+      "name": "Livingston Plaza Walkway",
+      "path": [
+        { "lat": 40.5222, "lng": -74.4370 },
+        { "lat": 40.5235, "lng": -74.4385 }
+      ],
+      "score": 25,
+      "level": "low",
+      "factors": [
+        { "factor": "lighting", "label": "Lighting", "score": 20, "weight": 0.25 },
+        { "factor": "density", "label": "Pedestrian Density", "score": 65, "weight": 0.20 },
+        { "factor": "verified_reports", "label": "Verified Reports", "score": 10, "weight": 0.25 },
+        { "factor": "environmental", "label": "Environmental", "score": 15, "weight": 0.15 },
+        { "factor": "time_of_day", "label": "Time of Day", "score": 30, "weight": 0.15 }
+      ],
+      "minutesAgo": 15,
+      "decayRate": 0.15
+    },
+    {
+      "segmentId": "seg-seminary-pl",
+      "name": "Seminary Pl — Behind Academic Building",
+      "path": [
+        { "lat": 40.5012, "lng": -74.4488 },
+        { "lat": 40.5025, "lng": -74.4500 }
+      ],
+      "score": 47,
+      "level": "medium",
+      "factors": [
+        { "factor": "lighting", "label": "Lighting", "score": 60, "weight": 0.25 },
+        { "factor": "density", "label": "Pedestrian Density", "score": 28, "weight": 0.20 },
+        { "factor": "verified_reports", "label": "Verified Reports", "score": 45, "weight": 0.25 },
+        { "factor": "environmental", "label": "Environmental", "score": 35, "weight": 0.15 },
+        { "factor": "time_of_day", "label": "Time of Day", "score": 65, "weight": 0.15 }
+      ],
+      "minutesAgo": 6,
+      "decayRate": 0.22
+    },
+    {
+      "segmentId": "seg-cook-douglass",
+      "name": "Nichol Ave — Cook/Douglass Path",
+      "path": [
+        { "lat": 40.4825, "lng": -74.4330 },
+        { "lat": 40.4840, "lng": -74.4345 }
+      ],
+      "score": 62,
+      "level": "medium",
+      "factors": [
+        { "factor": "lighting", "label": "Lighting", "score": 75, "weight": 0.25 },
+        { "factor": "density", "label": "Pedestrian Density", "score": 15, "weight": 0.20 },
+        { "factor": "verified_reports", "label": "Verified Reports", "score": 55, "weight": 0.25 },
+        { "factor": "environmental", "label": "Environmental", "score": 70, "weight": 0.15 },
+        { "factor": "time_of_day", "label": "Time of Day", "score": 80, "weight": 0.15 }
+      ],
+      "minutesAgo": 22,
+      "decayRate": 0.28
+    },
+    {
+      "segmentId": "seg-werblin-lot",
+      "name": "Werblin Rec Parking Lot",
+      "path": [
+        { "lat": 40.5190, "lng": -74.4618 },
+        { "lat": 40.5200, "lng": -74.4605 }
+      ],
+      "score": 33,
+      "level": "low",
+      "factors": [
+        { "factor": "lighting", "label": "Lighting", "score": 40, "weight": 0.25 },
+        { "factor": "density", "label": "Pedestrian Density", "score": 45, "weight": 0.20 },
+        { "factor": "verified_reports", "label": "Verified Reports", "score": 15, "weight": 0.25 },
+        { "factor": "environmental", "label": "Environmental", "score": 25, "weight": 0.15 },
+        { "factor": "time_of_day", "label": "Time of Day", "score": 40, "weight": 0.15 }
+      ],
+      "minutesAgo": 18,
+      "decayRate": 0.18
+    }
+  ],
+
+  "incidents": [
+    {
+      "id": "inc-001",
+      "type": "sensor_anomaly",
+      "severity": "high",
+      "status": "active",
+      "title": "Motion Sensor Triggered — George St Underpass",
+      "description": "Unusual motion pattern detected at sensor node GS-14 in the George St pedestrian underpass. No scheduled activity in this zone after 22:00. Consistent with loitering or concealment behavior.",
+      "location": { "lat": 40.4975, "lng": -74.4455 },
+      "segmentId": "seg-george-st",
+      "sensorId": "sensor-gs-14",
+      "minutesAgo": 8,
+      "updatedMinutesAgo": 3
+    },
+    {
+      "id": "inc-002",
+      "type": "sensor_anomaly",
+      "severity": "medium",
+      "status": "active",
+      "title": "Lighting Failure — College Ave South",
+      "description": "Three consecutive light poles (CA-07, CA-08, CA-09) reporting zero-lux readings between Brower Commons and the Rutgers Student Center. Maintenance ticket auto-generated.",
+      "location": { "lat": 40.5032, "lng": -74.4518 },
+      "segmentId": "seg-college-ave",
+      "sensorId": "sensor-ca-07",
+      "minutesAgo": 35,
+      "updatedMinutesAgo": 12
+    },
+    {
+      "id": "inc-003",
+      "type": "verified_report",
+      "severity": "high",
+      "status": "verified",
+      "title": "Vehicle Break-in — Lot 26 (Busch)",
+      "description": "RUPD confirmed vehicle window smashed in Lot 26 near the Busch Student Center. Victim reports stolen laptop and backpack. Evidence markers placed. CSI en route.",
+      "location": { "lat": 40.5230, "lng": -74.4585 },
+      "segmentId": "seg-busch-allison",
+      "minutesAgo": 52,
+      "updatedMinutesAgo": 28
+    },
+    {
+      "id": "inc-004",
+      "type": "unverified_report",
+      "severity": "medium",
+      "status": "active",
+      "title": "Suspicious Individual — Seminary Place",
+      "description": "Community report of a male in dark clothing repeatedly approaching parked vehicles near Seminary Place. Last seen heading toward New Brunswick train station.",
+      "location": { "lat": 40.5015, "lng": -74.4492 },
+      "segmentId": "seg-seminary-pl",
+      "minutesAgo": 18,
+      "updatedMinutesAgo": 18
+    },
+    {
+      "id": "inc-005",
+      "type": "sensor_anomaly",
+      "severity": "critical",
+      "status": "escalated",
+      "title": "Acoustic Spike — Easton Ave & Somerset",
+      "description": "Acoustic sensors EA-03 and EA-04 detected sustained high-decibel event (>95 dB for 45 sec). Pattern inconsistent with normal street noise. Possible altercation.",
+      "location": { "lat": 40.5022, "lng": -74.4470 },
+      "segmentId": "seg-easton-ave",
+      "sensorId": "sensor-ea-03",
+      "minutesAgo": 5,
+      "updatedMinutesAgo": 2
+    },
+    {
+      "id": "inc-006",
+      "type": "sensor_anomaly",
+      "severity": "low",
+      "status": "active",
+      "title": "Environmental Alert — LSM Courtyard",
+      "description": "Temperature sensor at the Library of Science and Medicine outdoor courtyard reading 18°F above ambient. Likely HVAC exhaust vent — not a safety concern but flagged for review.",
+      "location": { "lat": 40.5245, "lng": -74.4668 },
+      "segmentId": "seg-busch-allison",
+      "sensorId": "sensor-lsm-02",
+      "minutesAgo": 42,
+      "updatedMinutesAgo": 42
+    },
+    {
+      "id": "inc-007",
+      "type": "verified_report",
+      "severity": "medium",
+      "status": "verified",
+      "title": "Bike Theft — Scott Hall Rack",
+      "description": "RUPD report: U-lock cut on a blue Trek mountain bike at the Scott Hall bike rack. Victim filed report at 21:15. Security footage being reviewed.",
+      "location": { "lat": 40.4998, "lng": -74.4478 },
+      "segmentId": "seg-college-ave",
+      "minutesAgo": 90,
+      "updatedMinutesAgo": 45
+    },
+    {
+      "id": "inc-008",
+      "type": "unverified_report",
+      "severity": "low",
+      "status": "dismissed",
+      "title": "Noise Complaint — Livingston Apartments",
+      "description": "Multiple noise complaints from Livingston apartments. Likely a registered student event. RA confirmed party with valid reservation.",
+      "location": { "lat": 40.5228, "lng": -74.4375 },
+      "segmentId": "seg-livi-plaza",
+      "minutesAgo": 120,
+      "updatedMinutesAgo": 95
+    },
+    {
+      "id": "inc-009",
+      "type": "sensor_anomaly",
+      "severity": "medium",
+      "status": "active",
+      "title": "Motion Cluster — Cook/Douglass Lot 102",
+      "description": "Motion sensors CD-11 and CD-12 detecting repeated activity in Lot 102 after midnight. Three distinct motion events in 15 minutes. No vehicles registered for overnight parking.",
+      "location": { "lat": 40.4830, "lng": -74.4338 },
+      "segmentId": "seg-cook-douglass",
+      "sensorId": "sensor-cd-11",
+      "minutesAgo": 15,
+      "updatedMinutesAgo": 6
+    },
+    {
+      "id": "inc-010",
+      "type": "verified_report",
+      "severity": "high",
+      "status": "active",
+      "title": "Assault Report — College Ave Near George St",
+      "description": "Victim reports being pushed and struck near the College Ave and George St intersection. Suspect fled on foot eastbound on George St. EMS dispatched. Victim conscious with minor facial injuries.",
+      "location": { "lat": 40.4990, "lng": -74.4482 },
+      "segmentId": "seg-college-ave",
+      "minutesAgo": 12,
+      "updatedMinutesAgo": 5
+    }
+  ],
+
+  "broadcasts": [
+    {
+      "id": "bc-001",
+      "title": "Active Incident — George St Underpass",
+      "message": "RUPD is responding to a reported altercation near the George St pedestrian underpass. Avoid the area between George St and College Ave. Use Hamilton St or Easton Ave as alternates. Updates will follow.",
+      "zone": {
+        "id": "zone-george-st",
+        "polygon": [
+          { "lat": 40.4968, "lng": -74.4440 },
+          { "lat": 40.4968, "lng": -74.4470 },
+          { "lat": 40.4985, "lng": -74.4470 },
+          { "lat": 40.4985, "lng": -74.4440 }
+        ],
+        "label": "George St Underpass Zone"
+      },
+      "status": "active",
+      "minutesAgo": 10,
+      "expiresInMinutes": 50,
+      "durationMinutes": 60,
+      "affectedRouteCount": 23,
+      "createdBy": "Sgt. Vasquez — RUPD Dispatch"
+    },
+    {
+      "id": "bc-002",
+      "title": "Lighting Outage — College Ave South",
+      "message": "Street lighting is down on College Ave between Brower Commons and the Student Center. RUPD has deployed temporary patrol. Facilities has been notified. Use caution or take alternate well-lit routes.",
+      "zone": {
+        "id": "zone-college-south",
+        "polygon": [
+          { "lat": 40.5025, "lng": -74.4530 },
+          { "lat": 40.5025, "lng": -74.4505 },
+          { "lat": 40.5045, "lng": -74.4505 },
+          { "lat": 40.5045, "lng": -74.4530 }
+        ],
+        "label": "College Ave South Corridor"
+      },
+      "status": "active",
+      "minutesAgo": 30,
+      "expiresInMinutes": 90,
+      "durationMinutes": 120,
+      "affectedRouteCount": 15,
+      "createdBy": "Dispatch-Alpha"
+    },
+    {
+      "id": "bc-003",
+      "title": "Resolved — Busch Lot 26 Vehicle Incident",
+      "message": "The vehicle break-in incident in Lot 26 (Busch Campus) has been processed. Crime scene cleared. Normal traffic patterns restored. If you have information, contact RUPD at (848) 932-7211.",
+      "zone": {
+        "id": "zone-busch-lot",
+        "polygon": [
+          { "lat": 40.5220, "lng": -74.4595 },
+          { "lat": 40.5220, "lng": -74.4570 },
+          { "lat": 40.5240, "lng": -74.4570 },
+          { "lat": 40.5240, "lng": -74.4595 }
+        ],
+        "label": "Busch Lot 26"
+      },
+      "status": "expired",
+      "minutesAgo": 180,
+      "expiresInMinutes": -60,
+      "durationMinutes": 120,
+      "affectedRouteCount": 8,
+      "createdBy": "Admin-Safety"
+    },
+    {
+      "id": "bc-004",
+      "title": "Weather Advisory — High Winds Tonight",
+      "message": "NWS has issued a wind advisory for Middlesex County through 06:00. Gusts up to 45 mph expected. Avoid walking near construction zones and scaffolding on Busch and College Ave campuses.",
+      "zone": {
+        "id": "zone-campus-wide",
+        "polygon": [
+          { "lat": 40.4800, "lng": -74.4700 },
+          { "lat": 40.4800, "lng": -74.4250 },
+          { "lat": 40.5300, "lng": -74.4250 },
+          { "lat": 40.5300, "lng": -74.4700 }
+        ],
+        "label": "All Campuses"
+      },
+      "status": "active",
+      "minutesAgo": 95,
+      "expiresInMinutes": 265,
+      "durationMinutes": 360,
+      "affectedRouteCount": 142,
+      "createdBy": "Safety Operations Center"
+    }
+  ],
+
+  "officerReports": [
+    {
+      "id": "rpt-001",
+      "crimeType": "Assault",
+      "title": "Assault — College Ave & George St",
+      "description": "Victim (male, 20s, Rutgers student) reports being pushed and struck by an unknown male near the College Ave / George St intersection at approximately 22:45. Suspect described as 5'10\", dark hoodie, jeans. Fled eastbound on George St. EMS responded — victim treated for minor facial abrasions. Area canvassed, K-9 unit requested.",
+      "location": { "lat": 40.4990, "lng": -74.4482 },
+      "locationName": "College Ave & George St Intersection",
+      "priority": "critical",
+      "status": "active",
+      "source": "officer",
+      "officerId": "badge-1247",
+      "officerName": "Ofc. R. Martinez",
+      "minutesAgo": 12,
+      "broadcastToUsers": true,
+      "addToHeatmap": true
+    },
+    {
+      "id": "rpt-002",
+      "crimeType": "Vehicle Break-in",
+      "title": "Vehicle Break-in — Busch Lot 26",
+      "description": "Complainant reports returning to vehicle (silver Honda Civic, NJ plates) to find driver-side window smashed. Laptop bag and textbooks taken from back seat. No witnesses. Lot 26 camera footage requested from Busch Campus operations. Evidence markers placed at scene.",
+      "location": { "lat": 40.5230, "lng": -74.4585 },
+      "locationName": "Lot 26 — Busch Campus",
+      "priority": "high",
+      "status": "under_investigation",
+      "source": "officer",
+      "officerId": "badge-0892",
+      "officerName": "Ofc. J. Thompson",
+      "minutesAgo": 55,
+      "broadcastToUsers": true,
+      "addToHeatmap": true
+    },
+    {
+      "id": "rpt-003",
+      "crimeType": "Theft",
+      "title": "Bicycle Theft — Scott Hall",
+      "description": "Victim reports a blue Trek Marlin 7 mountain bike stolen from the Scott Hall bike rack. U-lock was cut with bolt cutters (cut lock found on scene). Occurred between 18:00–21:00. Security camera footage being pulled. Serial number on file.",
+      "location": { "lat": 40.4998, "lng": -74.4478 },
+      "locationName": "Scott Hall Bike Rack",
+      "priority": "medium",
+      "status": "under_investigation",
+      "source": "officer",
+      "officerId": "badge-0892",
+      "officerName": "Ofc. J. Thompson",
+      "minutesAgo": 95,
+      "broadcastToUsers": false,
+      "addToHeatmap": true
+    },
+    {
+      "id": "rpt-004",
+      "crimeType": "Suspicious Activity",
+      "title": "Suspicious Person — Seminary Place",
+      "description": "Multiple community reports of a male in dark clothing repeatedly checking vehicle door handles on Seminary Place near the Academic Building. Officers responded — individual gone on arrival. Patrol increased in area. Matched pattern to 2 similar reports this week.",
+      "location": { "lat": 40.5015, "lng": -74.4492 },
+      "locationName": "Seminary Place — Near Academic Building",
+      "priority": "high",
+      "status": "responding",
+      "source": "officer",
+      "officerId": "badge-1247",
+      "officerName": "Ofc. R. Martinez",
+      "minutesAgo": 22,
+      "broadcastToUsers": true,
+      "addToHeatmap": true
+    },
+    {
+      "id": "rpt-005",
+      "crimeType": "Public Disturbance",
+      "title": "Noise / Disorderly Conduct — Easton Ave",
+      "description": "Responded to multiple noise complaints at 114 Easton Ave. Large gathering (~40 people) on front porch and sidewalk. Crowd dispersed without incident. One individual issued a verbal warning for open container. No arrests.",
+      "location": { "lat": 40.5022, "lng": -74.4468 },
+      "locationName": "114 Easton Ave",
+      "priority": "low",
+      "status": "resolved",
+      "source": "officer",
+      "officerId": "badge-0445",
+      "officerName": "Ofc. A. Ramirez",
+      "minutesAgo": 140,
+      "broadcastToUsers": false,
+      "addToHeatmap": false
+    },
+    {
+      "id": "rpt-006",
+      "crimeType": "Drug Activity",
+      "title": "Drug Activity — Cook/Douglass Lot 102",
+      "description": "Patrol unit observed two individuals in a parked vehicle in Lot 102 with visible smoke. Upon approach, odor of marijuana confirmed. IDs collected — both non-students. Issued summons. Vehicle search conducted with consent — small quantity of cannabis recovered.",
+      "location": { "lat": 40.4832, "lng": -74.4340 },
+      "locationName": "Lot 102 — Cook/Douglass Campus",
+      "priority": "medium",
+      "status": "resolved",
+      "source": "officer",
+      "officerId": "badge-0661",
+      "officerName": "Ofc. T. Chen",
+      "minutesAgo": 75,
+      "broadcastToUsers": false,
+      "addToHeatmap": true
+    },
+    {
+      "id": "rpt-007",
+      "crimeType": "Harassment",
+      "title": "Verbal Harassment — Livingston Student Center",
+      "description": "Student reports being verbally harassed and followed from Livingston Dining Commons to the Student Center by an unknown male. Suspect described as 6'0\", gray sweatshirt, backpack. Victim is safe and with friends. Officers searching the area.",
+      "location": { "lat": 40.5225, "lng": -74.4378 },
+      "locationName": "Livingston Student Center",
+      "priority": "high",
+      "status": "responding",
+      "source": "officer",
+      "officerId": "badge-0445",
+      "officerName": "Ofc. A. Ramirez",
+      "minutesAgo": 8,
+      "broadcastToUsers": true,
+      "addToHeatmap": true
+    }
+  ],
+
+  "communityPosts": [
+    {
+      "id": "cp-001",
+      "content": "Street lights are completely out on College Ave between Brower and the Student Center. Had to use my phone flashlight to see where I was walking. Please fix this ASAP.",
+      "type": "negative",
+      "minutesAgo": 25,
+      "verified": true,
+      "location": { "latitude": 40.5035, "longitude": -74.4518 },
+      "authorId": "user-2847"
+    },
+    {
+      "id": "cp-002",
+      "content": "RUPD patrol walking the Livingston campus path tonight. Really appreciate the visibility — made my late night walk from the library feel much safer.",
+      "type": "positive",
+      "minutesAgo": 40,
+      "verified": false,
+      "location": { "latitude": 40.5225, "longitude": -74.4380 },
+      "authorId": "user-1193"
+    },
+    {
+      "id": "cp-003",
+      "content": "Just saw someone trying to open car doors on Seminary Place around 11pm. They ran off when they noticed me watching. Be careful if you park there.",
+      "type": "negative",
+      "minutesAgo": 20,
+      "verified": false,
+      "location": { "latitude": 40.5014, "longitude": -74.4490 },
+      "authorId": "user-5521"
+    },
+    {
+      "id": "cp-004",
+      "content": "The blue light emergency phone near the Werblin parking lot has been out of order for at least a week. Can someone report this to facilities?",
+      "type": "negative",
+      "minutesAgo": 180,
+      "verified": true,
+      "location": { "latitude": 40.5195, "longitude": -74.4612 },
+      "authorId": "user-8734"
+    },
+    {
+      "id": "cp-005",
+      "content": "New security cameras installed at the George St underpass! About time. That area always felt sketchy at night.",
+      "type": "positive",
+      "minutesAgo": 320,
+      "verified": false,
+      "location": { "latitude": 40.4976, "longitude": -74.4456 },
+      "authorId": "user-3309"
+    },
+    {
+      "id": "cp-006",
+      "content": "Heard yelling and glass breaking near Easton and Somerset around 11:30pm. Sounded like a fight. Didn't see anything but it was loud enough to hear from my apartment on the 3rd floor.",
+      "type": "negative",
+      "minutesAgo": 10,
+      "verified": false,
+      "location": { "latitude": 40.5020, "longitude": -74.4468 },
+      "authorId": "user-6612"
+    },
+    {
+      "id": "cp-007",
+      "content": "Construction fence behind the Engineering building on Busch is knocked over. Could easily trip over it at night — it's right across the walkway.",
+      "type": "negative",
+      "minutesAgo": 450,
+      "verified": true,
+      "location": { "latitude": 40.5218, "longitude": -74.4615 },
+      "authorId": "user-4401"
+    },
+    {
+      "id": "cp-008",
+      "content": "Shoutout to the SafeRoute team — used the app to walk home from Alexander Library at midnight and it routed me away from that dark stretch on College Ave. Felt much safer taking Seminary instead.",
+      "type": "positive",
+      "minutesAgo": 55,
+      "verified": false,
+      "location": { "latitude": 40.5048, "longitude": -74.4522 },
+      "authorId": "user-9027"
+    }
+  ],
+
+  "heatmapClusters": [
+    { "lat": 40.4978, "lng": -74.4458, "intensity": 0.95, "count": 18, "label": "George St Underpass" },
+    { "lat": 40.5025, "lng": -74.4472, "intensity": 0.80, "count": 14, "label": "Easton & Somerset" },
+    { "lat": 40.5035, "lng": -74.4520, "intensity": 0.65, "count": 10, "label": "College Ave South" },
+    { "lat": 40.4998, "lng": -74.4478, "intensity": 0.50, "count": 7, "label": "Scott Hall area" },
+    { "lat": 40.5230, "lng": -74.4585, "intensity": 0.60, "count": 9, "label": "Busch Lot 26" },
+    { "lat": 40.4832, "lng": -74.4340, "intensity": 0.55, "count": 8, "label": "Cook/Douglass Lot 102" },
+    { "lat": 40.5015, "lng": -74.4492, "intensity": 0.45, "count": 6, "label": "Seminary Place" },
+    { "lat": 40.5196, "lng": -74.4612, "intensity": 0.30, "count": 3, "label": "Werblin Lot" },
+    { "lat": 40.5228, "lng": -74.4378, "intensity": 0.35, "count": 4, "label": "Livingston Plaza" },
+    { "lat": 40.4993, "lng": -74.4483, "intensity": 0.25, "count": 2, "label": "Alexander Library" }
+  ],
+
+  "sensors": [
+    { "id": "sensor-gs-14", "type": "motion",        "label": "GS-14 — George St Underpass",      "location": { "lat": 40.4975, "lng": -74.4455 }, "health": "online",   "battery": 92, "firmware": "v3.1.2", "anomalyActive": true },
+    { "id": "sensor-ca-07", "type": "light",          "label": "CA-07 — College Ave Pole 7",       "location": { "lat": 40.5032, "lng": -74.4518 }, "health": "offline",  "battery": 0,  "firmware": "v3.1.2", "anomalyActive": true },
+    { "id": "sensor-ca-08", "type": "light",          "label": "CA-08 — College Ave Pole 8",       "location": { "lat": 40.5035, "lng": -74.4516 }, "health": "offline",  "battery": 0,  "firmware": "v3.1.2", "anomalyActive": true },
+    { "id": "sensor-ca-09", "type": "light",          "label": "CA-09 — College Ave Pole 9",       "location": { "lat": 40.5038, "lng": -74.4514 }, "health": "offline",  "battery": 0,  "firmware": "v3.1.2", "anomalyActive": true },
+    { "id": "sensor-ea-03", "type": "acoustic",       "label": "EA-03 — Easton Ave Acoustic",      "location": { "lat": 40.5022, "lng": -74.4470 }, "health": "online",   "battery": 78, "firmware": "v3.0.8", "anomalyActive": true },
+    { "id": "sensor-ea-04", "type": "acoustic",       "label": "EA-04 — Easton Ave Acoustic",      "location": { "lat": 40.5020, "lng": -74.4466 }, "health": "online",   "battery": 81, "firmware": "v3.0.8", "anomalyActive": true },
+    { "id": "sensor-lsm-02","type": "environmental",  "label": "LSM-02 — Library Sci & Med Temp",  "location": { "lat": 40.5245, "lng": -74.4668 }, "health": "online",   "battery": 65, "firmware": "v2.9.4", "anomalyActive": true },
+    { "id": "sensor-cd-11", "type": "motion",         "label": "CD-11 — Cook/Douglass Lot 102",    "location": { "lat": 40.4830, "lng": -74.4338 }, "health": "online",   "battery": 88, "firmware": "v3.1.2", "anomalyActive": true },
+    { "id": "sensor-cd-12", "type": "motion",         "label": "CD-12 — Cook/Douglass Lot 102",    "location": { "lat": 40.4828, "lng": -74.4335 }, "health": "degraded", "battery": 34, "firmware": "v3.1.0", "anomalyActive": false },
+    { "id": "sensor-bu-05", "type": "motion",         "label": "BU-05 — Busch Lot 26 Entry",       "location": { "lat": 40.5228, "lng": -74.4582 }, "health": "online",   "battery": 95, "firmware": "v3.1.2", "anomalyActive": false },
+    { "id": "sensor-sm-01", "type": "light",          "label": "SM-01 — Seminary Pl Lamppost",     "location": { "lat": 40.5018, "lng": -74.4495 }, "health": "online",   "battery": 71, "firmware": "v3.0.8", "anomalyActive": false },
+    { "id": "sensor-lv-02", "type": "environmental",  "label": "LV-02 — Livingston Plaza Env",     "location": { "lat": 40.5230, "lng": -74.4380 }, "health": "online",   "battery": 90, "firmware": "v2.9.4", "anomalyActive": false },
+    { "id": "sensor-wb-01", "type": "motion",         "label": "WB-01 — Werblin Parking Entry",    "location": { "lat": 40.5192, "lng": -74.4615 }, "health": "online",   "battery": 97, "firmware": "v3.1.2", "anomalyActive": false }
+  ],
+
+  "activeRoutes": [
+    {
+      "id": "route-001",
+      "path": [
+        { "lat": 40.5042, "lng": -74.4520 },
+        { "lat": 40.5040, "lng": -74.4485 },
+        { "lat": 40.5000, "lng": -74.4485 },
+        { "lat": 40.4992, "lng": -74.4489 }
+      ],
+      "userId": "user-2847",
+      "label": "Brower Commons → Alexander Library (avoids College Ave lighting outage)",
+      "color": "#00D4FF"
+    },
+    {
+      "id": "route-002",
+      "path": [
+        { "lat": 40.4962, "lng": -74.4448 },
+        { "lat": 40.4975, "lng": -74.4490 },
+        { "lat": 40.4995, "lng": -74.4465 }
+      ],
+      "userId": "user-1193",
+      "label": "NJ Transit Station → Zimmerli Museum (avoids George St Underpass)",
+      "color": "#34D399"
+    },
+    {
+      "id": "route-003",
+      "path": [
+        { "lat": 40.5229, "lng": -74.4381 },
+        { "lat": 40.5220, "lng": -74.4349 }
+      ],
+      "userId": "user-5521",
+      "label": "Livingston Dining → Lucy Stone Hall",
+      "color": "#A78BFA"
+    },
+    {
+      "id": "route-004",
+      "path": [
+        { "lat": 40.5196, "lng": -74.4610 },
+        { "lat": 40.5248, "lng": -74.4612 }
+      ],
+      "userId": "user-8734",
+      "label": "Werblin Rec → Allison Rd Apartments",
+      "color": "#FBBF24"
+    }
+  ],
+
+  "patrolSuggestions": [
+    {
+      "id": "patrol-001",
+      "path": [
+        { "lat": 40.4970, "lng": -74.4445 },
+        { "lat": 40.4990, "lng": -74.4475 }
+      ],
+      "priority": "critical",
+      "reason": "Active assault report + sensor anomaly. Highest risk segment on campus.",
+      "label": "George St Underpass → College Ave"
+    },
+    {
+      "id": "patrol-002",
+      "path": [
+        { "lat": 40.5025, "lng": -74.4530 },
+        { "lat": 40.5040, "lng": -74.4510 }
+      ],
+      "priority": "high",
+      "reason": "Lighting outage along College Ave South. 3 light sensors offline.",
+      "label": "College Ave — Brower to Student Center"
+    },
+    {
+      "id": "patrol-003",
+      "path": [
+        { "lat": 40.5010, "lng": -74.4460 },
+        { "lat": 40.5030, "lng": -74.4485 }
+      ],
+      "priority": "high",
+      "reason": "Acoustic spike detected. Multiple noise complaints near Easton & Somerset.",
+      "label": "Easton Ave Corridor Sweep"
+    },
+    {
+      "id": "patrol-004",
+      "path": [
+        { "lat": 40.5008, "lng": -74.4485 },
+        { "lat": 40.5025, "lng": -74.4500 }
+      ],
+      "priority": "medium",
+      "reason": "Suspicious activity reports near Seminary Pl. Vehicle door checking pattern.",
+      "label": "Seminary Pl — Academic Bldg Loop"
+    },
+    {
+      "id": "patrol-005",
+      "path": [
+        { "lat": 40.4822, "lng": -74.4325 },
+        { "lat": 40.4842, "lng": -74.4348 }
+      ],
+      "priority": "medium",
+      "reason": "Repeat motion alerts in Lot 102 after midnight. Drug activity report resolved.",
+      "label": "Cook/Douglass — Lot 102 Perimeter"
+    }
+  ],
+
+  "escortRequests": [
+    {
+      "id": "esc-001",
+      "userId": "user-2847",
+      "userName": "Sarah Mitchell",
+      "userPhone": "(848) 555-0142",
+      "origin": { "lat": 40.5042, "lng": -74.4520, "name": "Brower Commons" },
+      "destination": { "lat": 40.4992, "lng": -74.4489, "name": "Alexander Library" },
+      "currentLocation": { "lat": 40.5020, "lng": -74.4485 },
+      "routeLabel": "Brower Commons → Alexander Library",
+      "priority": "urgent",
+      "reason": "Walking alone after midnight, street lights are out on College Ave. Feeling unsafe.",
+      "status": "pending",
+      "minutesAgo": 3
+    },
+    {
+      "id": "esc-002",
+      "userId": "user-5521",
+      "userName": "James Park",
+      "userPhone": "(732) 555-0278",
+      "origin": { "lat": 40.5229, "lng": -74.4381, "name": "Livingston Dining Hall" },
+      "destination": { "lat": 40.5220, "lng": -74.4349, "name": "Lucy Stone Hall" },
+      "currentLocation": { "lat": 40.5229, "lng": -74.4381 },
+      "routeLabel": "Livingston Dining → Lucy Stone Hall",
+      "priority": "normal",
+      "reason": "Late night walk across campus, would feel safer with an officer.",
+      "status": "accepted",
+      "minutesAgo": 12,
+      "acceptedBy": "Ofc. A. Ramirez",
+      "acceptedMinutesAgo": 8
+    },
+    {
+      "id": "esc-003",
+      "userId": "user-8734",
+      "userName": "Emily Chen",
+      "userPhone": "(908) 555-0391",
+      "origin": { "lat": 40.5196, "lng": -74.4610, "name": "Werblin Recreation Center" },
+      "destination": { "lat": 40.5248, "lng": -74.4612, "name": "Allison Rd Apartments" },
+      "currentLocation": { "lat": 40.5210, "lng": -74.4620 },
+      "routeLabel": "Werblin Rec → Allison Rd",
+      "priority": "urgent",
+      "reason": "Heard shouting near Busch Lot 26, too scared to walk alone past that area.",
+      "status": "en_route",
+      "minutesAgo": 18,
+      "acceptedBy": "Ofc. T. Chen",
+      "acceptedMinutesAgo": 15
+    },
+    {
+      "id": "esc-004",
+      "userId": "user-1193",
+      "userName": "Michael Torres",
+      "userPhone": "(732) 555-0517",
+      "origin": { "lat": 40.4962, "lng": -74.4448, "name": "NJ Transit Station" },
+      "destination": { "lat": 40.4995, "lng": -74.4465, "name": "Zimmerli Art Museum" },
+      "currentLocation": { "lat": 40.4975, "lng": -74.4490 },
+      "routeLabel": "NJ Transit Station → Zimmerli Museum",
+      "priority": "urgent",
+      "reason": "Route goes near George St underpass area where assault was reported tonight. Need escort.",
+      "status": "pending",
+      "minutesAgo": 1
+    }
+  ]
+}

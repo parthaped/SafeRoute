@@ -4,12 +4,16 @@ UI-only React Native (Expo) app that visually replicates the SafeRoute iOS safet
 
 ## Run
 
+**Expo (Metro)** — from project root:
+
 ```bash
 npm install
 npx expo start
 ```
 
 Then press `i` for iOS simulator or scan the QR code with Expo Go.
+
+**Xcode (standalone iOS app, no server)** — to open in Xcode and run on simulator/device without starting Metro, see **[XCODE_SETUP.md](./XCODE_SETUP.md)**. You’ll run `npx expo prebuild --platform ios`, then open the generated `ios/*.xcworkspace` in Xcode and run with the **Release** scheme so the app works with no computer/server.
 
 ## Structure
 

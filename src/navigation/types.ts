@@ -3,7 +3,12 @@
  * Use these when typing route.params in screen components.
  */
 export type TabParamList = {
-  Route: { openDestination?: boolean; destinationName?: string } | undefined;
+  Route: {
+    openDestination?: boolean;
+    destinationName?: string;
+    destinationLat?: number;
+    destinationLng?: number;
+  } | undefined;
   Safety: undefined;
   Profile: undefined;
 };

@@ -20,27 +20,50 @@ function TabBarIcon({
   name: 'route' | 'safety' | 'profile';
   focused: boolean;
 }) {
-  const activeColor = colors.tabActive;
+  const activeColor = colors.white;
   const inactiveColor = colors.tabInactive;
 
+  let icon: React.ReactNode = null;
   switch (name) {
     case 'route':
-      return <RouteArrowIcon color={focused ? activeColor : inactiveColor} />;
+      icon = <RouteArrowIcon color={focused ? activeColor : inactiveColor} />;
+      break;
     case 'safety':
-      return (
+      icon = (
         <SafeRouteLogo
-          width={48}
-          height={48}
+          width={44}
+          height={44}
           showText={false}
-          color={focused ? activeColor : '#808080'}
+          color={focused ? colors.primaryRed : 'rgba(255,255,255,0.25)'}
         />
       );
+      break;
     case 'profile':
-      return <PersonIcon color={focused ? activeColor : inactiveColor} />;
-    default:
-      return null;
+      icon = <PersonIcon color={focused ? activeColor : inactiveColor} />;
+      break;
   }
+
+  return (
+    <View style={iconStyles.wrapper}>
+      {icon}
+      {focused && <View style={iconStyles.dot} />}
+    </View>
+  );
 }
+
+const iconStyles = StyleSheet.create({
+  wrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.white,
+    marginTop: 6,
+  },
+});
 
 export function TabNavigator() {
   return (
@@ -48,11 +71,12 @@ export function TabNavigator() {
       initialRouteName="Safety"
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.tabActive,
+        tabBarActiveTintColor: colors.white,
         tabBarInactiveTintColor: colors.tabInactive,
         tabBarStyle: {
           position: 'absolute',
-          borderTopWidth: 0,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: colors.border,
           backgroundColor: 'transparent',
           elevation: 0,
           height: 84,
@@ -62,12 +86,12 @@ export function TabNavigator() {
         tabBarBackground: () =>
           Platform.OS === 'ios' ? (
             <BlurView
-              intensity={80}
+              intensity={90}
               tint="dark"
               style={StyleSheet.absoluteFill}
             />
           ) : (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0, 0, 0, 0.95)' }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0, 0, 0, 0.97)' }]} />
           ),
         tabBarShowLabel: false,
       }}

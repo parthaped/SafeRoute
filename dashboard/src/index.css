@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Surface ── */
+    --surface-base: 0 0 0;
+    --surface-raised: rgba(15, 15, 15, 0.95);
+    --surface-overlay: rgba(28, 28, 30, 0.85);
+    --surface-glass: rgba(28, 28, 30, 0.65);
+    --surface-border: rgba(255, 255, 255, 0.08);
+    --surface-border-light: rgba(255, 255, 255, 0.12);
+    --surface-hover: rgba(255, 255, 255, 0.04);
+    --surface-card: rgba(255, 255, 255, 0.03);
+    --surface-card-border: rgba(255, 255, 255, 0.05);
+    --surface-sidebar: rgba(0, 0, 0, 0.80);
+    --surface-topbar: rgba(0, 0, 0, 0.60);
+
+    /* ── Text ── */
+    --text-primary: 255 255 255;
+    --text-secondary: rgba(255, 255, 255, 0.72);
+    --text-tertiary: rgba(255, 255, 255, 0.50);
+    --text-quaternary: rgba(255, 255, 255, 0.32);
+
+    /* ── Scrollbar ── */
+    --scrollbar-thumb: rgba(255, 255, 255, 0.10);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.20);
+
+    /* ── Selection ── */
+    --selection-bg: rgba(225, 6, 0, 0.30);
+    --selection-text: #fff;
+  }
+
+  [data-theme="light"] {
+    /* ── Surface ── */
+    --surface-base: 245 245 247;
+    --surface-raised: rgba(255, 255, 255, 0.96);
+    --surface-overlay: rgba(243, 243, 246, 0.88);
+    --surface-glass: rgba(255, 255, 255, 0.75);
+    --surface-border: rgba(0, 0, 0, 0.09);
+    --surface-border-light: rgba(0, 0, 0, 0.14);
+    --surface-hover: rgba(0, 0, 0, 0.04);
+    --surface-card: rgba(0, 0, 0, 0.025);
+    --surface-card-border: rgba(0, 0, 0, 0.06);
+    --surface-sidebar: rgba(255, 255, 255, 0.85);
+    --surface-topbar: rgba(255, 255, 255, 0.72);
+
+    /* ── Text ── */
+    --text-primary: 29 29 31;
+    --text-secondary: rgba(0, 0, 0, 0.75);
+    --text-tertiary: rgba(0, 0, 0, 0.58);
+    --text-quaternary: rgba(0, 0, 0, 0.38);
+
+    /* ── Scrollbar ── */
+    --scrollbar-thumb: rgba(0, 0, 0, 0.12);
+    --scrollbar-thumb-hover: rgba(0, 0, 0, 0.22);
+
+    /* ── Selection ── */
+    --selection-bg: rgba(225, 6, 0, 0.20);
+    --selection-text: #1d1d1f;
+  }
+
+  * {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--selection-bg);
+    color: var(--selection-text);
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
+  }
+
+  body {
+    overflow: hidden;
+    background: rgb(var(--surface-base));
+    color: rgb(var(--text-primary));
+  }
+}
+
+@layer components {
+  .glass {
+    @apply bg-surface-glass backdrop-blur-[40px] border border-surface-border rounded-xl;
+  }
+  .glass-raised {
+    @apply bg-surface-raised backdrop-blur-[40px] border border-surface-border rounded-xl;
+  }
+  .glass-header {
+    @apply px-5 py-3.5 border-b border-surface-border flex items-center justify-between;
+  }
+  .glass-body {
+    @apply p-5;
+  }
+
+  .label-caps {
+    @apply text-2xs font-semibold uppercase tracking-[0.08em] text-text-tertiary;
+  }
+
+  .glow-red {
+    box-shadow: 0 0 20px rgba(225, 6, 0, 0.15), 0 0 60px rgba(225, 6, 0, 0.05);
+  }
+}
+
+/* Hide Google Maps bottom-bar attribution */
+.gm-style .gmnoprint,
+.gm-style .gm-style-cc,
+.gm-style a[href*="maps.google.com/maps"],
+.gm-style a[href*="google.com/intl"] {
+  display: none !important;
+}
+.gm-style div[style*="position: absolute"][style*="bottom: 0"] > div {
+  display: none !important;
+}

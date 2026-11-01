@@ -49,11 +49,12 @@ export function Button({
     <TouchableOpacity
       onPress={onPress}
       disabled={disabled || loading}
-      activeOpacity={0.8}
+      activeOpacity={0.75}
       style={[
         styles.base,
         variantStyles[variant],
         fullWidth && styles.fullWidth,
+        (disabled || loading) && styles.disabled,
         style,
       ]}
     >
@@ -72,30 +73,34 @@ export function Button({
 
 const styles = StyleSheet.create({
   base: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.md,
+    paddingVertical: 13,
+    paddingHorizontal: spacing.xl,
+    borderRadius: borderRadius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
+    minHeight: 48,
   },
   fullWidth: {
     width: '100%',
+  },
+  disabled: {
+    opacity: 0.45,
   },
   primary: {
     backgroundColor: colors.primaryRed,
   },
   secondary: {
-    backgroundColor: colors.tabActive,
+    backgroundColor: colors.surface3,
   },
   outline: {
     backgroundColor: 'transparent',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: colors.primaryRed,
   },
   text: {
-    fontSize: fontSizes.body,
+    fontSize: fontSizes.caption,
     fontWeight: fontWeights.semibold,
+    letterSpacing: 0.3,
   },
   primaryText: {
     color: colors.white,

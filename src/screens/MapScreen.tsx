@@ -18,16 +18,17 @@ import MapView, { Polyline, Marker, Camera, Polygon } from 'react-native-maps';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoute, RouteProp, useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
-import Svg, { Path } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
 import { Button, SafeRouteLogo } from '../components';
 import { UserLocationPointer } from '../components/UserLocationPointer';
-import { CheckIcon, SearchIcon, ChevronRightIcon, ChevronLeftIcon, View3DIcon, PhoneIcon } from '../components/icons/Icons';
+import { RouteChat, type ChatMessage } from '../components/RouteChat';
+import { CheckIcon, SearchIcon, ChevronRightIcon, View3DIcon, PhoneIcon } from '../components/icons/Icons';
 import { colors } from '../theme/colors';
 import { spacing, borderRadius } from '../theme/spacing';
-import { fontSizes, fontWeights } from '../theme/typography';
+import { fontSizes, fontWeights, letterSpacing } from '../theme/typography';
 import type { TabParamList } from '../navigation/types';
-import { RUTGERS_CENTER, SUGGESTIONS, COMMON_PLACES, PLACE_CATEGORIES } from '../constants/places';
+import { RUTGERS_CENTER } from '../constants/places';
+import { searchPlaces, getPlaceDetails, type PlacePrediction } from '../services/placesSearch';
 import type { LatLng, RouteStep, TravelMode, RouteOption, DirectionsResult } from '../services/directions';
 import { fetchDirections } from '../services/directions';
 import { GOOGLE_MAPS_API_KEY } from '../config';
@@ -44,9 +45,18 @@ import {
   type CheckInStatus,
 } from '../services/safetyCheckIn';
 import { shouldShowRouteChangeNotification } from '../services/quietMode';
+import { submitEscortRequest } from '../services/escortRequest';
+import { publishActiveRoute, removeActiveRoute } from '../services/activeRouteSync';
 import { subscribePosts, type CommunityPost } from '../services/community';
 import * as CrimeHeatmap from '../services/crimeHeatmap';
 import type { DangerZoneSummary, DangerZoneIncident, DangerZoneWithScore } from '../services/crimeHeatmap';
+import {
+  LIGHTING_CONDITIONS,
+  ACOUSTIC_ANOMALIES,
+  ACTIVE_HAZARD_ZONES,
+} from '../data/demoAlerts';
+import { DARK_MAP_STYLES } from '../theme/mapStyles';
+import Svg, { Circle, Line } from 'react-native-svg';
 
 const INITIAL_REGION = {
   ...RUTGERS_CENTER,
@@ -112,19 +122,6 @@ function getForwardOffsetCoordinate(
   };
 }
 
-function HamburgerIcon() {
-  return (
-    <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3 12h18M3 6h18M3 18h18"
-        stroke={colors.textPrimary}
-        strokeWidth={2}
-        strokeLinecap="round"
-      />
-    </Svg>
-  );
-}
-
 type MapRouteProp = RouteProp<TabParamList, 'Route'>;
 
 type Destination = {
@@ -156,7 +153,9 @@ export function MapScreen() {
   const [showAlternateRoutes, setShowAlternateRoutes] = useState(false);
   const [searchFocused, setSearchFocused] = useState(!!params?.openDestination);
   const [searchQuery, setSearchQuery] = useState('');
-  const [placesMenuVisible, setPlacesMenuVisible] = useState(false);
+  const [autocompletePredictions, setAutocompletePredictions] = useState<PlacePrediction[]>([]);
+  const [originSearchQuery, setOriginSearchQuery] = useState('');
+  const [originPredictions, setOriginPredictions] = useState<PlacePrediction[]>([]);
   const [travelMode, setTravelMode] = useState<TravelMode>('walking');
   const [showOriginPicker, setShowOriginPicker] = useState(false);
   const [is3DMode, setIs3DMode] = useState(false);
@@ -179,11 +178,22 @@ export function MapScreen() {
   const [showMapViewMenu, setShowMapViewMenu] = useState(false);
   const [recentReports, setRecentReports] = useState<CommunityPost[]>([]);
   const [showCrimeHeatmap, setShowCrimeHeatmap] = useState(true);
+  const [showLightingOverlay, setShowLightingOverlay] = useState(true);
+  const [showHazardZones, setShowHazardZones] = useState(true);
   const [routeAvoidanceSummary, setRouteAvoidanceSummary] = useState<DangerZoneSummary[] | null>(null);
   const [showDirectionsList, setShowDirectionsList] = useState(false);
   const [liveTimeRemainingText, setLiveTimeRemainingText] = useState<string>('');
   const [liveArrivalTime, setLiveArrivalTime] = useState<Date | null>(null);
   const [selectedZoneIncidents, setSelectedZoneIncidents] = useState<DangerZoneIncident[] | null>(null);
+  const [showRouteChat, setShowRouteChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const chatUnreadRef = useRef(0);
+  const [chatUnread, setChatUnread] = useState(0);
+  const [showEscortModal, setShowEscortModal] = useState(false);
+  const [escortReason, setEscortReason] = useState('');
+  const [escortPriority, setEscortPriority] = useState<'normal' | 'urgent'>('normal');
+  const [isSubmittingEscort, setIsSubmittingEscort] = useState(false);
+  const deviceUserIdRef = useRef(`device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`);
 
   const searchBarTop = insets.top + HEADER_BAR_HEIGHT + 8;
   const bottomCardBottom = insets.bottom + TAB_BAR_HEIGHT + spacing.md;
@@ -197,7 +207,6 @@ export function MapScreen() {
   );
 
   const loadDirections = useCallback(async (from: LatLng, to: LatLng, mode: TravelMode = travelMode) => {
-    // Clear old routes immediately before loading new ones
     setRouteOptions([]);
     setRouteCoordinates([]);
     setSteps([]);
@@ -209,11 +218,15 @@ export function MapScreen() {
     setLoading(true);
     setDirectionsError(null);
     setRouteAvoidanceSummary(null);
+
+    const TIMEOUT_MS = 8000;
+    let timedOut = false;
+    const timeout = setTimeout(() => { timedOut = true; }, TIMEOUT_MS);
+
     try {
       let result: DirectionsResult = await fetchDirections(from, to, GOOGLE_MAPS_API_KEY, mode);
       const alternatives = result.routes;
-      // Google Maps + safety: pick the best alternative by combined time + safety (mimic Google but add safety)
-      const SAFETY_TO_MINUTES = 400; // 400 m-weighted danger units ≈ 1 minute trade-off
+      const SAFETY_TO_MINUTES = 900;
       let bestIdx = 0;
       let bestCombined = Infinity;
       for (let i = 0; i < alternatives.length; i++) {
@@ -227,40 +240,43 @@ export function MapScreen() {
       }
       result = { routes: alternatives, selectedRouteIndex: bestIdx };
       const selectedRoute = result.routes[bestIdx];
-      // If best route still hits danger zones, try waypoints to get a safer one
-      if (selectedRoute && CrimeHeatmap.doesRouteIntersectDangerZones(selectedRoute.coordinates)) {
+
+      if (!timedOut && selectedRoute && CrimeHeatmap.doesRouteIntersectDangerZones(selectedRoute.coordinates)) {
+        const MAX_DETOUR_RATIO = 1.7;
+        const originalMinutes = selectedRoute.durationMinutes;
         let safeRoute: RouteOption | null = null;
         let avoidResult: DirectionsResult | null = null;
-        for (const maxWp of [5, 8]) {
-          const waypoints = CrimeHeatmap.getAvoidanceWaypoints(from, to, selectedRoute.coordinates, maxWp);
-          if (waypoints.length === 0) continue;
+
+        const waypoints = CrimeHeatmap.getAvoidanceWaypoints(from, to, selectedRoute.coordinates, 5);
+        if (waypoints.length > 0 && !timedOut) {
           try {
             const res = await fetchDirections(from, to, GOOGLE_MAPS_API_KEY, mode, waypoints);
             const route = res.routes[0];
-            if (route && !CrimeHeatmap.doesRouteIntersectDangerZones(route.coordinates)) {
+            if (route &&
+                !CrimeHeatmap.doesRouteIntersectDangerZones(route.coordinates) &&
+                route.durationMinutes <= originalMinutes * MAX_DETOUR_RATIO) {
               safeRoute = route;
               avoidResult = res;
-              break;
             }
-          } catch {
-            // try next
-          }
+          } catch { /* fallthrough */ }
         }
-        if (!safeRoute) {
-          const dijkstraWaypoints = CrimeHeatmap.getSafeRouteWaypointsDijkstra(from, to, 5);
-          if (dijkstraWaypoints.length > 0) {
+
+        if (!safeRoute && !timedOut) {
+          const dijkstraWaypoints = CrimeHeatmap.getSafeRouteWaypointsDijkstra(from, to, 6);
+          if (dijkstraWaypoints.length > 0 && !timedOut) {
             try {
               const res = await fetchDirections(from, to, GOOGLE_MAPS_API_KEY, mode, dijkstraWaypoints);
               const route = res.routes[0];
-              if (route && !CrimeHeatmap.doesRouteIntersectDangerZones(route.coordinates)) {
+              if (route &&
+                  !CrimeHeatmap.doesRouteIntersectDangerZones(route.coordinates) &&
+                  route.durationMinutes <= originalMinutes * MAX_DETOUR_RATIO) {
                 safeRoute = route;
                 avoidResult = res;
               }
-            } catch {
-              // keep direct or previous
-            }
+            } catch { /* keep direct route */ }
           }
         }
+
         if (safeRoute && avoidResult) {
           result = avoidResult;
           setRouteAvoidanceSummary(
@@ -268,6 +284,7 @@ export function MapScreen() {
           );
         }
       }
+
       const routes = result.routes;
       const idx = Math.min(result.selectedRouteIndex, Math.max(0, routes.length - 1));
       const finalRoute = routes[idx] ?? routes[0];
@@ -295,7 +312,6 @@ export function MapScreen() {
       setSteps([]);
       setDurationText('');
       setDistanceText('');
-      // Show alert for API-related errors
       if (msg.includes('API key') || msg.includes('access denied') || msg.includes('REQUEST_DENIED') || msg.includes('Directions API')) {
         Alert.alert(
           'Directions unavailable',
@@ -305,6 +321,7 @@ export function MapScreen() {
         );
       }
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, [travelMode]);
@@ -363,14 +380,43 @@ export function MapScreen() {
 
   useEffect(() => {
     if (params?.openDestination) setSearchFocused(true);
-    if (params?.destinationName) {
-      const s = SUGGESTIONS.find((x) => x.name === params.destinationName);
-      if (s) {
-        setDestination({ name: s.name, latitude: s.latitude, longitude: s.longitude });
-        loadDirections(effectiveOrigin, { latitude: s.latitude, longitude: s.longitude }, travelMode);
-      }
+    if (params?.destinationLat != null && params?.destinationLng != null && params?.destinationName) {
+      handleSelectPlace({
+        name: params.destinationName,
+        latitude: params.destinationLat,
+        longitude: params.destinationLng,
+      });
+    } else if (params?.destinationName) {
+      setSearchQuery(params.destinationName);
+      setSearchFocused(true);
     }
-  }, [params?.openDestination, params?.destinationName, loadDirections, effectiveOrigin, travelMode]);
+  }, [params?.openDestination, params?.destinationName, params?.destinationLat, params?.destinationLng, handleSelectPlace]);
+
+  // Debounced Google Places autocomplete for destination search
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setAutocompletePredictions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const results = await searchPlaces(searchQuery);
+      setAutocompletePredictions(results);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Debounced Google Places autocomplete for origin search
+  useEffect(() => {
+    if (!originSearchQuery.trim()) {
+      setOriginPredictions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const results = await searchPlaces(originSearchQuery);
+      setOriginPredictions(results);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [originSearchQuery]);
 
   // Cleanup location tracking on unmount
   useEffect(() => {
@@ -423,7 +469,6 @@ export function MapScreen() {
 
   const handleSelectPlace = useCallback(
     (place: { name: string; latitude: number; longitude: number }) => {
-      // Clear old routes before setting new destination
       setRouteOptions([]);
       setRouteCoordinates([]);
       setSteps([]);
@@ -431,18 +476,34 @@ export function MapScreen() {
       setDistanceText('');
       setSelectedRouteIndex(0);
       setShowAlternateRoutes(false);
-      
+
       setDestination({ name: place.name, latitude: place.latitude, longitude: place.longitude });
       setSearchQuery('');
+      setAutocompletePredictions([]);
       setSearchFocused(false);
-      setPlacesMenuVisible(false);
       loadDirections(effectiveOrigin, { latitude: place.latitude, longitude: place.longitude }, travelMode);
     },
     [loadDirections, effectiveOrigin, travelMode]
   );
 
+  const handleSelectPrediction = useCallback(
+    async (prediction: PlacePrediction) => {
+      setLoading(true);
+      const details = await getPlaceDetails(prediction.placeId);
+      if (details) {
+        handleSelectPlace({ name: details.name, latitude: details.latitude, longitude: details.longitude });
+      } else {
+        Alert.alert('Location unavailable', 'Could not get details for this place.');
+        setLoading(false);
+      }
+    },
+    [handleSelectPlace]
+  );
+
   const handleSelectOrigin = async (useCurrentLocation: boolean) => {
     setShowOriginPicker(false);
+    setOriginSearchQuery('');
+    setOriginPredictions([]);
     if (useCurrentLocation) {
       const loc = await getCurrentLocation();
       if (loc) {
@@ -457,18 +518,97 @@ export function MapScreen() {
     }
   };
 
-  const handleSelectOriginPlace = useCallback(
-    (place: { name: string; latitude: number; longitude: number }) => {
-      setShowOriginPicker(false);
-      const newOrigin = { latitude: place.latitude, longitude: place.longitude };
-      setOrigin(newOrigin);
-      setOriginName(place.name);
-      if (destination) {
-        loadDirections(newOrigin, { latitude: destination.latitude, longitude: destination.longitude }, travelMode);
+  const handleSelectOriginPrediction = useCallback(
+    async (prediction: PlacePrediction) => {
+      const details = await getPlaceDetails(prediction.placeId);
+      if (details) {
+        setShowOriginPicker(false);
+        setOriginSearchQuery('');
+        setOriginPredictions([]);
+        const newOrigin = { latitude: details.latitude, longitude: details.longitude };
+        setOrigin(newOrigin);
+        setOriginName(details.name);
+        if (destination) {
+          loadDirections(newOrigin, { latitude: destination.latitude, longitude: destination.longitude }, travelMode);
+        }
+      } else {
+        Alert.alert('Location unavailable', 'Could not get details for this place.');
       }
     },
     [destination, loadDirections, travelMode]
   );
+
+  const handleChatSend = useCallback((text: string) => {
+    const msg: ChatMessage = {
+      id: `user-${Date.now()}`,
+      sender: 'user',
+      senderName: 'You',
+      text,
+      timestamp: new Date(),
+    };
+    setChatMessages((prev) => [...prev, msg]);
+
+    // Simulate officer acknowledgement after 2 seconds (demo)
+    setTimeout(() => {
+      const reply: ChatMessage = {
+        id: `officer-${Date.now()}`,
+        sender: 'officer',
+        senderName: 'RUPD Dispatch',
+        text: 'Copy that. Stay on your current route — an officer is nearby.',
+        timestamp: new Date(),
+      };
+      setChatMessages((prev) => [...prev, reply]);
+      if (!showRouteChat) {
+        chatUnreadRef.current += 1;
+        setChatUnread(chatUnreadRef.current);
+      }
+    }, 2000);
+  }, [showRouteChat]);
+
+  const handleSubmitEscort = async () => {
+    if (!escortReason.trim()) {
+      Alert.alert('Reason required', 'Please describe why you need an escort.');
+      return;
+    }
+    setIsSubmittingEscort(true);
+    try {
+      const loc = userLocation ?? (await getCurrentLocation());
+      const lat = loc?.latitude ?? origin.latitude;
+      const lng = loc?.longitude ?? origin.longitude;
+
+      await submitEscortRequest({
+        userId: `user-${Date.now().toString(36)}`,
+        userName: 'SafeRoute User',
+        userPhone: '',
+        origin: {
+          lat: origin.latitude,
+          lng: origin.longitude,
+          name: originName || 'Current Location',
+        },
+        destination: {
+          lat: destination?.latitude ?? lat,
+          lng: destination?.longitude ?? lng,
+          name: destination?.name ?? 'Nearby',
+        },
+        currentLocation: { lat, lng },
+        routeLabel: destination ? `${originName} → ${destination.name}` : 'Escort from current location',
+        priority: escortPriority,
+        reason: escortReason.trim(),
+      });
+
+      setShowEscortModal(false);
+      setEscortReason('');
+      Alert.alert(
+        'Escort Requested',
+        'Your request has been sent to RUPD dispatch. An officer will be assigned shortly.',
+        [{ text: 'OK' }]
+      );
+    } catch {
+      Alert.alert('Error', 'Could not submit request. Try calling RUPD at (732) 932-7211.');
+    } finally {
+      setIsSubmittingEscort(false);
+    }
+  };
 
   const handleStartGuiding = async () => {
     // Show contact selection modal if user wants to share location
@@ -489,6 +629,50 @@ export function MapScreen() {
     setActive(true);
     setCurrentStepIndex(0);
     lastTurnNotificationRef.current = -1;
+
+    // Publish route to Firestore so the dashboard sees it in real-time
+    if (destination && routeCoordinates.length > 0) {
+      publishActiveRoute({
+        userId: deviceUserIdRef.current,
+        userName: 'SafeRoute User',
+        origin: {
+          lat: effectiveOrigin.latitude,
+          lng: effectiveOrigin.longitude,
+          name: originName || 'Current Location',
+        },
+        destination: {
+          lat: destination.latitude,
+          lng: destination.longitude,
+          name: destination.name,
+        },
+        path: routeCoordinates.map((c) => ({ lat: c.latitude, lng: c.longitude })),
+        label: `${originName || 'Current Location'} → ${destination.name}`,
+        durationText,
+        distanceText,
+        travelMode,
+      }).catch(() => {});
+    }
+
+    // Seed demo chat messages from RUPD dispatch
+    const now = Date.now();
+    setChatMessages([
+      {
+        id: 'demo-1',
+        sender: 'officer',
+        senderName: 'RUPD Dispatch',
+        text: `Route monitoring active. We can see your path to ${destination?.name ?? 'your destination'}. Stay safe.`,
+        timestamp: new Date(now - 2000),
+      },
+      {
+        id: 'demo-2',
+        sender: 'officer',
+        senderName: 'Ofc. R. Martinez',
+        text: 'Be advised — increased patrol on College Ave tonight due to a lighting outage. You should be routed around it.',
+        timestamp: new Date(now),
+      },
+    ]);
+    setChatUnread(2);
+    chatUnreadRef.current = 2;
     
     // Set 3D mode based on user preference
     setIs3DMode(preferredViewMode === '3d');
@@ -577,7 +761,7 @@ export function MapScreen() {
   };
 
   const handleNewRoute = () => {
-    // Clear all route data
+    removeActiveRoute(deviceUserIdRef.current).catch(() => {});
     setDestination(null);
     setRouteOptions([]);
     setRouteCoordinates([]);
@@ -603,6 +787,12 @@ export function MapScreen() {
     }
     setShowSafetyCheckIn(false);
     setEstimatedArrivalTime(null);
+
+    // Clear chat
+    setChatMessages([]);
+    setChatUnread(0);
+    chatUnreadRef.current = 0;
+    setShowRouteChat(false);
     
     if (mapRef.current) {
       mapRef.current.animateToRegion({
@@ -614,6 +804,7 @@ export function MapScreen() {
   };
 
   const handleEndRoute = async () => {
+    removeActiveRoute(deviceUserIdRef.current).catch(() => {});
     setActive(false);
     setCurrentStepIndex(0);
     
@@ -638,6 +829,12 @@ export function MapScreen() {
     setIs3DMode(false);
     setCameraConfig(null);
     lastTurnNotificationRef.current = -1;
+
+    // Clear chat
+    setChatMessages([]);
+    setChatUnread(0);
+    chatUnreadRef.current = 0;
+    setShowRouteChat(false);
     
     // Stop location tracking
     stopLocationTracking();
@@ -1022,20 +1219,29 @@ export function MapScreen() {
     return R * c;
   };
 
-  /** Extend route polyline to exact origin/destination when API snapped to road (off by a block). */
+  /** Ensure route polyline starts at exact origin and ends at exact destination.
+   *  directions.ts already pins endpoints, but this acts as a safety net for
+   *  rendering — guarantees the drawn line meets the markers. */
   const extendRouteToExactEndpoints = useCallback(
     (coords: LatLng[], originPt: LatLng | null, destPt: { latitude: number; longitude: number } | null): LatLng[] => {
       if (coords.length < 2) return coords;
-      const first = coords[0];
-      const last = coords[coords.length - 1];
-      const THRESHOLD_M = 30;
-      const needStart = originPt && calculateDistance(originPt, first) > THRESHOLD_M;
-      const needEnd = destPt && calculateDistance(last, destPt) > THRESHOLD_M;
-      return [
-        ...(needStart ? [originPt] : []),
-        ...coords,
-        ...(needEnd ? [destPt] : []),
-      ];
+      const result = [...coords];
+      const DEDUP_M = 3;
+      if (originPt) {
+        if (calculateDistance(originPt, result[0]) > DEDUP_M) {
+          result.unshift(originPt);
+        } else {
+          result[0] = originPt;
+        }
+      }
+      if (destPt) {
+        if (calculateDistance(result[result.length - 1], destPt) > DEDUP_M) {
+          result.push(destPt);
+        } else {
+          result[result.length - 1] = destPt;
+        }
+      }
+      return result;
     },
     [calculateDistance]
   );
@@ -1186,7 +1392,7 @@ export function MapScreen() {
     }
   };
 
-  const showSuggestions = searchFocused && !active;
+  const showSearchResults = searchFocused && !active;
   const hasRoute = routeCoordinates.length > 0 && destination;
   const showRouteCard = (hasRoute || loading || directionsError) && destination;
   const isGuiding = active && hasRoute;
@@ -1212,51 +1418,63 @@ export function MapScreen() {
               >
                 <View3DIcon color={is3DMode ? colors.tabActive : colors.textSecondary} />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.menuButton}
-                onPress={() => setPlacesMenuVisible(true)}
-                accessibilityLabel="Common places"
-              >
-                <HamburgerIcon />
-              </TouchableOpacity>
             </View>
           </View>
         </SafeAreaView>
       )}
+      {/* ── Google/Apple-style navigation guidance ── */}
       {isGuiding && (
-        <SafeAreaView style={styles.navHeader} edges={['top']}>
-          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-          <View style={styles.navHeaderContent}>
-            <TouchableOpacity
-              style={styles.navBackButton}
-              onPress={handleEndRoute}
-              accessibilityLabel="End route and go back"
-            >
-              <ChevronLeftIcon color={colors.primaryRed} />
-              <Text style={styles.navBackText}>End</Text>
-            </TouchableOpacity>
-            <View style={styles.navHeaderCenter}>
-              <Text style={styles.navHeaderTitle} numberOfLines={2}>
-                {currentStep ? currentStep.instruction : (destination?.name ?? 'Navigation')}
-              </Text>
-              <Text style={styles.navHeaderSubtitle} numberOfLines={1}>
-                {currentStep ? `${currentStep.distance} · ${currentStep.duration}` : (destination?.name ?? '')}
-              </Text>
-            </View>
-            <View style={styles.navHeaderRight}>
-              {travelMode === 'walking' && (
+        <>
+          {/* Top instruction banner */}
+          <SafeAreaView style={styles.navBanner} edges={['top']}>
+            <BlurView intensity={90} tint="dark" style={StyleSheet.absoluteFill} />
+            <View style={styles.navBannerContent}>
+              <View style={styles.navBannerInstruction}>
+                <Text style={styles.navBannerArrow}>
+                  {currentStep?.instruction?.toLowerCase().includes('left') ? '↰'
+                    : currentStep?.instruction?.toLowerCase().includes('right') ? '↱'
+                    : currentStep?.instruction?.toLowerCase().includes('u-turn') ? '↩'
+                    : '↑'}
+                </Text>
+                <View style={styles.navBannerTextBlock}>
+                  <Text style={styles.navBannerDistance} numberOfLines={1}>
+                    {currentStep?.distance ?? ''}
+                  </Text>
+                  <Text style={styles.navBannerText} numberOfLines={2}>
+                    {currentStep ? currentStep.instruction : (destination?.name ?? 'Navigation')}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.navBannerActions}>
                 <TouchableOpacity
-                  style={styles.nav3DButton}
-                  onPress={() => setShowMapViewMenu(true)}
+                  style={styles.navChatButton}
+                  onPress={() => { setShowRouteChat(true); setChatUnread(0); chatUnreadRef.current = 0; }}
                   activeOpacity={0.7}
-                  accessibilityLabel={`${is3DMode ? '3D' : '2D'} ${mapType === 'satellite' ? 'Satellite' : 'Regular'}`}
+                  accessibilityLabel="Open safety chat"
                 >
-                  <View3DIcon color={is3DMode ? colors.tabActive : colors.textSecondary} />
+                  <Text style={styles.navChatIcon}>💬</Text>
+                  {chatUnread > 0 && (
+                    <View style={styles.chatBadge}>
+                      <Text style={styles.chatBadgeText}>{chatUnread}</Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
-              )}
+                <TouchableOpacity
+                  style={styles.navEscortPill}
+                  onPress={() => {
+                    setEscortReason('');
+                    setEscortPriority('urgent');
+                    setShowEscortModal(true);
+                  }}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Request RUPD escort"
+                >
+                  <SafeRouteLogo width={22} height={22} showText={false} color={colors.white} />
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </SafeAreaView>
+          </SafeAreaView>
+        </>
       )}
 
       {!isGuiding && (
@@ -1337,7 +1555,7 @@ export function MapScreen() {
               )}
             </TouchableOpacity>
           </BlurView>
-          {showSuggestions && (
+          {showSearchResults && (
             <BlurView intensity={95} tint="dark" style={styles.suggestionsBlur}>
               <ScrollView
                 style={styles.suggestions}
@@ -1345,22 +1563,30 @@ export function MapScreen() {
                 showsVerticalScrollIndicator={true}
                 keyboardShouldPersistTaps="handled"
               >
-                <Text style={styles.suggestionsTitle}>Suggested</Text>
-                {SUGGESTIONS.map((s) => (
-                  <TouchableOpacity
-                    key={s.id}
-                    style={styles.suggestionRow}
-                    onPress={() => handleSelectPlace(s)}
-                    activeOpacity={0.7}
-                    disabled={loading}
-                  >
-                    <View>
-                      <Text style={styles.suggestionName}>{s.name}</Text>
-                      <Text style={styles.suggestionSubtitle}>{s.subtitle}</Text>
-                    </View>
-                    <ChevronRightIcon />
-                  </TouchableOpacity>
-                ))}
+                {searchQuery.trim().length === 0 ? (
+                  <Text style={styles.suggestionsTitle}>Type to search any location</Text>
+                ) : autocompletePredictions.length > 0 ? (
+                  <>
+                    <Text style={styles.suggestionsTitle}>Results</Text>
+                    {autocompletePredictions.map((p) => (
+                      <TouchableOpacity
+                        key={p.placeId}
+                        style={styles.suggestionRow}
+                        onPress={() => handleSelectPrediction(p)}
+                        activeOpacity={0.7}
+                        disabled={loading}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.suggestionName}>{p.name}</Text>
+                          <Text style={styles.suggestionSubtitle} numberOfLines={1}>{p.address}</Text>
+                        </View>
+                        <ChevronRightIcon />
+                      </TouchableOpacity>
+                    ))}
+                  </>
+                ) : (
+                  <Text style={styles.suggestionsTitle}>No results found</Text>
+                )}
               </ScrollView>
             </BlurView>
           )}
@@ -1372,6 +1598,7 @@ export function MapScreen() {
         style={styles.map}
         initialRegion={INITIAL_REGION}
         mapType={mapType}
+        customMapStyle={mapType === 'standard' ? DARK_MAP_STYLES : undefined}
         showsUserLocation={false}
         showsMyLocationButton
         showsCompass
@@ -1383,18 +1610,20 @@ export function MapScreen() {
         showsIndoors={false}
         loadingEnabled
       >
-        {/* Crime safety: danger zones (red heat map areas). Tappable to show incidents. */}
+        {/* Crime safety: danger zones — gradient red matching dashboard heatmap palette */}
         {showCrimeHeatmap && dangerZonePolygonsWithScore.length > 0 && (
           <>
             {dangerZonePolygonsWithScore.map((zone: DangerZoneWithScore, idx: number) => {
-              const opacity = 0.25 + (zone.riskScore / 100) * 0.6;
+              const t = zone.riskScore / 100;
+              const fillOpacity = 0.05 + t * 0.35;
+              const strokeOpacity = 0.15 + t * 0.45;
               return (
                 <Polygon
                   key={`danger-${idx}`}
                   coordinates={zone.coordinates}
-                  fillColor={`rgba(220,50,50,${opacity})`}
-                  strokeColor={`rgba(180,30,30,${0.5 + opacity * 0.5})`}
-                  strokeWidth={2}
+                  fillColor={`rgba(225,6,0,${fillOpacity})`}
+                  strokeColor={`rgba(225,6,0,${strokeOpacity})`}
+                  strokeWidth={1}
                   zIndex={10}
                   tappable
                   onPress={() => setSelectedZoneIncidents(CrimeHeatmap.getIncidentsInPolygon(zone.coordinates))}
@@ -1403,6 +1632,113 @@ export function MapScreen() {
             })}
           </>
         )}
+        {/* Hazard zones from RUPD broadcasts — matches dashboard style */}
+        {showHazardZones && ACTIVE_HAZARD_ZONES.map((zone) => {
+          const centroid = zone.polygon.reduce(
+            (acc, p) => ({ latitude: acc.latitude + p.latitude / zone.polygon.length, longitude: acc.longitude + p.longitude / zone.polygon.length }),
+            { latitude: 0, longitude: 0 },
+          );
+          return (
+            <React.Fragment key={`hazard-${zone.id}`}>
+              <Polygon
+                coordinates={zone.polygon}
+                fillColor="rgba(255,59,48,0.06)"
+                strokeColor="rgba(255,59,48,0.6)"
+                strokeWidth={1.5}
+                zIndex={8}
+                tappable
+                onPress={() => Alert.alert(zone.title, zone.message)}
+              />
+              <Marker
+                coordinate={centroid}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+                zIndex={9}
+                onPress={() => Alert.alert(zone.title, zone.message)}
+              >
+                <View style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: 6,
+                  backgroundColor: 'rgba(255,59,48,0.15)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,59,48,0.5)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Text style={{ fontSize: 14, fontWeight: '800', color: '#FF3B30' }}>!</Text>
+                </View>
+              </Marker>
+            </React.Fragment>
+          );
+        })}
+
+        {/* Lighting condition markers — dashboard-style sensor icons */}
+        {showLightingOverlay && LIGHTING_CONDITIONS.map((light) => {
+          const color = light.condition === 'dark' ? '#E10600' : light.condition === 'dim' ? '#FFD60A' : '#2ECC71';
+          return (
+            <Marker
+              key={`light-${light.id}`}
+              coordinate={light.location}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              zIndex={12}
+              title={light.label}
+              description={light.condition === 'dark' ? 'Lighting out — use caution' : light.condition === 'dim' ? 'Low lighting' : 'Well lit'}
+            >
+              <View style={{
+                width: 26,
+                height: 26,
+                borderRadius: 6,
+                backgroundColor: 'rgba(10,10,10,0.92)',
+                borderWidth: 1.2,
+                borderColor: color,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <Svg width={14} height={14} viewBox="0 0 16 16" fill="none">
+                  <Circle cx="8" cy="8" r="3" fill={color} opacity="0.9" />
+                  <Line x1="8" y1="1" x2="8" y2="4" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+                  <Line x1="8" y1="12" x2="8" y2="15" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+                  <Line x1="1" y1="8" x2="4" y2="8" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+                  <Line x1="12" y1="8" x2="15" y2="8" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+                </Svg>
+              </View>
+            </Marker>
+          );
+        })}
+
+        {/* Acoustic anomaly markers — dashboard-style sensor icons */}
+        {showLightingOverlay && ACOUSTIC_ANOMALIES.map((anomaly) => (
+          <Marker
+            key={`acoustic-${anomaly.id}`}
+            coordinate={anomaly.location}
+            anchor={{ x: 0.5, y: 0.5 }}
+            tracksViewChanges={false}
+            zIndex={13}
+            title={anomaly.label}
+            description={anomaly.description}
+          >
+            <View style={{
+              width: 26,
+              height: 26,
+              borderRadius: 6,
+              backgroundColor: 'rgba(10,10,10,0.92)',
+              borderWidth: 1.2,
+              borderColor: '#FF6B35',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Svg width={14} height={14} viewBox="0 0 16 16" fill="none">
+                <Line x1="2" y1="6" x2="2" y2="10" stroke="#FF6B35" strokeWidth="1.5" strokeLinecap="round" />
+                <Line x1="5.5" y1="4" x2="5.5" y2="12" stroke="#FF6B35" strokeWidth="1.5" strokeLinecap="round" />
+                <Line x1="9" y1="2" x2="9" y2="14" stroke="#FF6B35" strokeWidth="1.5" strokeLinecap="round" />
+                <Line x1="12.5" y1="5" x2="12.5" y2="11" stroke="#FF6B35" strokeWidth="1.5" strokeLinecap="round" />
+              </Svg>
+            </View>
+          </Marker>
+        ))}
+
         {/* Render all route options; extend to exact origin/destination so line starts/ends at requested location */}
         {routeOptions.map((route, index) => {
           const isSelected = index === selectedRouteIndex;
@@ -1445,70 +1781,13 @@ export function MapScreen() {
         )}
       </MapView>
 
-      {!destination && !showSuggestions && (
+      {!destination && !showSearchResults && (
         <View style={[styles.emptyMapHint, { bottom: bottomCardBottom + 80 }]} pointerEvents="none">
           <Text style={styles.emptyMapText}>
             Tap "Where to?" to choose a destination and get directions.
           </Text>
         </View>
       )}
-
-      <Modal
-        visible={placesMenuVisible}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setPlacesMenuVisible(false)}
-      >
-        <Pressable
-          style={styles.placesOverlay}
-          onPress={() => setPlacesMenuVisible(false)}
-        >
-          <Pressable style={styles.placesSheet} onPress={(e) => e.stopPropagation()}>
-            <SafeAreaView style={styles.placesSheetInner} edges={['bottom']}>
-              <View style={styles.placesHeader}>
-                <Text style={styles.placesTitle}>Common places</Text>
-                <TouchableOpacity
-                  onPress={() => setPlacesMenuVisible(false)}
-                  style={styles.placesCloseBtn}
-                >
-                  <Text style={styles.placesCloseText}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <ScrollView
-                style={styles.placesScroll}
-                contentContainerStyle={styles.placesScrollContent}
-                showsVerticalScrollIndicator={true}
-                keyboardShouldPersistTaps="handled"
-              >
-                {PLACE_CATEGORIES.map((cat) => {
-                  const placesInCat = COMMON_PLACES.filter((p) => p.category === cat);
-                  if (placesInCat.length === 0) return null;
-                  return (
-                    <View key={cat} style={styles.placesCategory}>
-                      <Text style={styles.placesCategoryTitle}>{cat}</Text>
-                      {placesInCat.map((p) => (
-                        <TouchableOpacity
-                          key={p.id}
-                          style={styles.placeRow}
-                          onPress={() => handleSelectPlace(p)}
-                          activeOpacity={0.7}
-                          disabled={loading}
-                        >
-                          <View style={styles.placeRowText}>
-                            <Text style={styles.placeName}>{p.name}</Text>
-                            <Text style={styles.placeSubtitle}>{p.subtitle}</Text>
-                          </View>
-                          <ChevronRightIcon />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            </SafeAreaView>
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       {/* Map view menu: Map/Satellite + 2D/3D (button within button) */}
       <Modal
@@ -1559,14 +1838,37 @@ export function MapScreen() {
               </View>
             </View>
             <View style={styles.mapViewMenuRow}>
-              <Text style={styles.mapViewMenuLabel}>Safety</Text>
+              <Text style={styles.mapViewMenuLabel}>Safety overlays</Text>
+              <View style={styles.mapViewMenuOptions}>
+                <TouchableOpacity
+                  style={[styles.mapViewMenuOption, showCrimeHeatmap && styles.mapViewMenuOptionActive]}
+                  onPress={() => setShowCrimeHeatmap(!showCrimeHeatmap)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.mapViewMenuOptionText, showCrimeHeatmap && styles.mapViewMenuOptionTextActive]}>
+                    Risk areas
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.mapViewMenuOption, showLightingOverlay && styles.mapViewMenuOptionActive]}
+                  onPress={() => setShowLightingOverlay(!showLightingOverlay)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.mapViewMenuOptionText, showLightingOverlay && styles.mapViewMenuOptionTextActive]}>
+                    Lighting
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            <View style={styles.mapViewMenuRow}>
+              <Text style={styles.mapViewMenuLabel}>Alerts</Text>
               <TouchableOpacity
-                style={[styles.mapViewMenuOption, showCrimeHeatmap && styles.mapViewMenuOptionActive]}
-                onPress={() => { setShowCrimeHeatmap(!showCrimeHeatmap); setShowMapViewMenu(false); }}
+                style={[styles.mapViewMenuOption, showHazardZones && styles.mapViewMenuOptionActive]}
+                onPress={() => { setShowHazardZones(!showHazardZones); setShowMapViewMenu(false); }}
                 activeOpacity={0.7}
               >
-                <Text style={[styles.mapViewMenuOptionText, showCrimeHeatmap && styles.mapViewMenuOptionTextActive]}>
-                  {showCrimeHeatmap ? 'Heatmap on' : 'Heatmap off'}
+                <Text style={[styles.mapViewMenuOptionText, showHazardZones && styles.mapViewMenuOptionTextActive]}>
+                  {showHazardZones ? 'Hazard zones on' : 'Hazard zones off'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1627,65 +1929,74 @@ export function MapScreen() {
         visible={showOriginPicker}
         animationType="slide"
         transparent
-        onRequestClose={() => setShowOriginPicker(false)}
+        onRequestClose={() => { setShowOriginPicker(false); setOriginSearchQuery(''); setOriginPredictions([]); }}
       >
-        <Pressable
-          style={styles.placesOverlay}
-          onPress={() => setShowOriginPicker(false)}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
         >
-          <Pressable style={styles.placesSheet} onPress={(e) => e.stopPropagation()}>
-            <SafeAreaView style={styles.placesSheetInner} edges={['bottom']}>
-              <View style={styles.placesHeader}>
-                <Text style={styles.placesTitle}>Choose start</Text>
-                <TouchableOpacity
-                  onPress={() => setShowOriginPicker(false)}
-                  style={styles.placesCloseBtn}
+          <Pressable
+            style={styles.placesOverlay}
+            onPress={() => { setShowOriginPicker(false); setOriginSearchQuery(''); setOriginPredictions([]); }}
+          >
+            <Pressable style={styles.placesSheet} onPress={(e) => e.stopPropagation()}>
+              <SafeAreaView style={styles.placesSheetInner} edges={['bottom']}>
+                <View style={styles.placesHeader}>
+                  <Text style={styles.placesTitle}>Choose start</Text>
+                  <TouchableOpacity
+                    onPress={() => { setShowOriginPicker(false); setOriginSearchQuery(''); setOriginPredictions([]); }}
+                    style={styles.placesCloseBtn}
+                  >
+                    <Text style={styles.placesCloseText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.originSearchContainer}>
+                  <View style={styles.searchIconContainer}>
+                    <SearchIcon color={colors.textSecondary} />
+                  </View>
+                  <TextInput
+                    style={styles.originSearchInput}
+                    placeholder="Search for a starting location"
+                    placeholderTextColor={colors.textTertiary}
+                    value={originSearchQuery}
+                    onChangeText={setOriginSearchQuery}
+                    returnKeyType="search"
+                    autoFocus
+                  />
+                </View>
+                <ScrollView
+                  style={styles.placesScroll}
+                  contentContainerStyle={styles.placesScrollContent}
+                  showsVerticalScrollIndicator={true}
+                  keyboardShouldPersistTaps="handled"
                 >
-                  <Text style={styles.placesCloseText}>Done</Text>
-                </TouchableOpacity>
-              </View>
-              <ScrollView
-                style={styles.placesScroll}
-                contentContainerStyle={styles.placesScrollContent}
-                showsVerticalScrollIndicator={true}
-                keyboardShouldPersistTaps="handled"
-              >
-                <TouchableOpacity
-                  style={styles.originPickerCurrentRow}
-                  onPress={() => handleSelectOrigin(true)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.originPickerCurrentText}>Use my location</Text>
-                  <ChevronRightIcon color={colors.textSecondary} />
-                </TouchableOpacity>
-                {PLACE_CATEGORIES.map((cat) => {
-                  const placesInCat = COMMON_PLACES.filter((p) => p.category === cat);
-                  if (placesInCat.length === 0) return null;
-                  return (
-                    <View key={cat} style={styles.placesCategory}>
-                      <Text style={styles.placesCategoryTitle}>{cat}</Text>
-                      {placesInCat.map((p) => (
-                        <TouchableOpacity
-                          key={p.id}
-                          style={styles.placeRow}
-                          onPress={() => handleSelectOriginPlace(p)}
-                          activeOpacity={0.7}
-                          disabled={loading}
-                        >
-                          <View style={styles.placeRowText}>
-                            <Text style={styles.placeName}>{p.name}</Text>
-                            <Text style={styles.placeSubtitle}>{p.subtitle}</Text>
-                          </View>
-                          <ChevronRightIcon />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            </SafeAreaView>
+                  <TouchableOpacity
+                    style={styles.originPickerCurrentRow}
+                    onPress={() => handleSelectOrigin(true)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.originPickerCurrentText}>Use my location</Text>
+                    <ChevronRightIcon color={colors.textSecondary} />
+                  </TouchableOpacity>
+                  {originPredictions.map((p) => (
+                    <TouchableOpacity
+                      key={p.placeId}
+                      style={styles.placeRow}
+                      onPress={() => handleSelectOriginPrediction(p)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.placeRowText}>
+                        <Text style={styles.placeName}>{p.name}</Text>
+                        <Text style={styles.placeSubtitle} numberOfLines={1}>{p.address}</Text>
+                      </View>
+                      <ChevronRightIcon />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </SafeAreaView>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       {showRouteCard && (
@@ -1828,30 +2139,31 @@ export function MapScreen() {
                     )}
                   </>
                 )}
-                {isGuiding && routeAvoidanceSummary && routeAvoidanceSummary.length > 0 && (
-                  <Text style={styles.guidingAvoidanceText} numberOfLines={1}>
-                    Safe route — avoiding: {routeAvoidanceSummary.map((s) => s.areaName).join(', ')}
-                  </Text>
-                )}
-                {isGuiding && (liveTimeRemainingText || liveArrivalTime) && (
-                  <View style={styles.guidingEtaBlock}>
-                    <Text style={styles.guidingEtaText} numberOfLines={1}>
-                      {liveArrivalTime ? `Arrive by ${liveArrivalTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}
-                      {liveArrivalTime && liveTimeRemainingText ? ' · ' : ''}
-                      {liveTimeRemainingText ? `${liveTimeRemainingText} left` : ''}
-                    </Text>
+                {isGuiding && (
+                  <View style={styles.guidingBottomBar}>
+                    <View style={styles.guidingEtaRow}>
+                      <View style={styles.guidingEtaLeft}>
+                        <Text style={styles.guidingEtaBig} numberOfLines={1}>
+                          {liveTimeRemainingText || durationText || '—'}
+                        </Text>
+                        <Text style={styles.guidingEtaDetail} numberOfLines={1}>
+                          {distanceText}{liveArrivalTime ? ` · ${liveArrivalTime.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}
+                        </Text>
+                      </View>
+                      <TouchableOpacity style={styles.guidingEndBtn} onPress={handleEndRoute} activeOpacity={0.7}>
+                        <Text style={styles.guidingEndBtnText}>End</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {routeAvoidanceSummary && routeAvoidanceSummary.length > 0 && (
+                      <Text style={styles.guidingAvoidanceText} numberOfLines={1}>
+                        Safe route — avoiding: {routeAvoidanceSummary.map((s) => s.areaName).join(', ')}
+                      </Text>
+                    )}
                   </View>
                 )}
                 <View style={[styles.cardButtons, isGuiding && styles.cardButtonsGuiding]}>
                   {isGuiding ? (
-                    <Button
-                      title="End route"
-                      variant="outline"
-                      fullWidth
-                      onPress={handleEndRoute}
-                      style={styles.cardButtonEndRoute}
-                      textStyle={styles.cardButtonEndRouteText}
-                    />
+                    <View />
                   ) : showDirectionsList ? (
                     <>
                       <Button
@@ -2053,6 +2365,91 @@ export function MapScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Route Chat — iMessage-style safety messaging with RUPD */}
+      <Modal
+        visible={showRouteChat}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowRouteChat(false)}
+      >
+        <RouteChat
+          messages={chatMessages}
+          onSend={handleChatSend}
+          onClose={() => setShowRouteChat(false)}
+          destinationName={destination?.name ?? 'destination'}
+        />
+      </Modal>
+
+      {/* Request Escort Modal (during navigation) */}
+      <Modal
+        visible={showEscortModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowEscortModal(false)}
+      >
+        <Pressable style={styles.modalOverlay} onPress={() => setShowEscortModal(false)}>
+          <Pressable style={styles.escortModalSheet} onPress={(e) => e.stopPropagation()}>
+            <SafeAreaView style={styles.escortModalInner} edges={['bottom']}>
+              <View style={styles.escortModalHeader}>
+                <Text style={styles.escortModalTitle}>Request RUPD Escort</Text>
+                <TouchableOpacity onPress={() => setShowEscortModal(false)} style={styles.closeButton}>
+                  <Text style={styles.closeButtonText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.escortModalDesc}>
+                An officer will be dispatched to your location to walk with you.
+                {destination ? ` Route: ${originName} → ${destination.name}` : ''}
+              </Text>
+
+              <View style={styles.escortPrioritySection}>
+                <Text style={styles.escortSectionLabel}>PRIORITY</Text>
+                <View style={styles.escortPriorityRow}>
+                  <TouchableOpacity
+                    style={[styles.escortPriorityBtn, escortPriority === 'normal' && styles.escortPriorityBtnActive]}
+                    onPress={() => setEscortPriority('normal')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.escortPriorityBtnText, escortPriority === 'normal' && styles.escortPriorityBtnTextActive]}>Normal</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.escortPriorityBtn, escortPriority === 'urgent' && styles.escortPriorityBtnUrgent]}
+                    onPress={() => setEscortPriority('urgent')}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.escortPriorityBtnText, escortPriority === 'urgent' && styles.escortPriorityBtnTextUrgent]}>Urgent</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.escortPrioritySection}>
+                <Text style={styles.escortSectionLabel}>WHY DO YOU NEED AN ESCORT?</Text>
+                <TextInput
+                  style={styles.escortReasonInput}
+                  placeholder="e.g. Walking alone, feeling unsafe, area seems dangerous..."
+                  placeholderTextColor={colors.textTertiary}
+                  value={escortReason}
+                  onChangeText={setEscortReason}
+                  multiline
+                  numberOfLines={3}
+                  maxLength={300}
+                  textAlignVertical="top"
+                />
+              </View>
+
+              <Button
+                title={isSubmittingEscort ? 'Submitting...' : 'Submit Escort Request'}
+                onPress={handleSubmitEscort}
+                variant="primary"
+                fullWidth
+                disabled={isSubmittingEscort || !escortReason.trim()}
+                loading={isSubmittingEscort}
+              />
+            </SafeAreaView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -2086,16 +2483,16 @@ const styles = StyleSheet.create({
   menuButton: {
     width: 36,
     height: 36,
-    borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(20, 20, 25, 0.95)',
+    borderRadius: 18,
+    backgroundColor: 'rgba(10, 10, 10, 0.9)',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
     elevation: 4,
   },
   mapViewMenuOverlay: {
@@ -2106,24 +2503,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: spacing.lg,
     minWidth: 220,
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface1,
     borderRadius: borderRadius.lg,
-    padding: spacing.md,
+    padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
   },
   mapViewMenuTitle: {
-    fontSize: fontSizes.caption,
+    fontSize: fontSizes.caption2,
     fontWeight: fontWeights.semibold,
     color: colors.textTertiary,
     marginBottom: spacing.sm,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: letterSpacing.caps,
   },
   mapViewMenuRow: {
     marginBottom: spacing.sm,
@@ -2143,16 +2540,16 @@ const styles = StyleSheet.create({
     minWidth: 72,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
-    borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: borderRadius.xs,
+    backgroundColor: colors.surface2,
     borderWidth: 1,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   mapViewMenuOptionActive: {
-    backgroundColor: colors.primaryRed + '30',
-    borderColor: colors.primaryRed,
+    backgroundColor: colors.primaryRed + '18',
+    borderColor: colors.primaryRed + '60',
   },
   mapViewMenuOptionText: {
     fontSize: fontSizes.footnote,
@@ -2169,23 +2566,23 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   searchBarBlur: {
-    borderRadius: borderRadius.xl,
+    borderRadius: borderRadius.sm,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
-    backgroundColor: 'rgba(5, 5, 5, 0.95)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    minHeight: 52,
+    backgroundColor: 'rgba(8, 8, 8, 0.95)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    minHeight: 50,
   },
   searchIconContainer: {
     marginRight: spacing.md,
@@ -2203,19 +2600,19 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   suggestionsBlur: {
-    marginTop: spacing.md,
-    borderRadius: borderRadius.xl,
+    marginTop: spacing.sm,
+    borderRadius: borderRadius.sm,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.5,
-    shadowRadius: 24,
-    elevation: 16,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
   },
   suggestions: {
-    backgroundColor: 'rgba(5, 5, 5, 0.95)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
+    backgroundColor: 'rgba(8, 8, 8, 0.95)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     maxHeight: 400,
   },
   suggestionsContent: {
@@ -2269,46 +2666,48 @@ const styles = StyleSheet.create({
     left: spacing.lg,
     right: spacing.lg,
     borderRadius: borderRadius.lg,
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 12,
-    borderWidth: 1,
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 16,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     maxHeight: '35%',
   },
   cardWrapperGuiding: {
-    maxHeight: 120,
+    maxHeight: 140,
     marginBottom: 0,
   },
   cardGuiding: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.xl,
   },
   cardButtonsGuiding: {
-    marginTop: spacing.sm,
+    marginTop: 0,
+    height: 0,
+    overflow: 'hidden',
   },
   recentReportsSectionGuiding: {
     maxHeight: 52,
   },
   avoidanceBlock: {
     marginBottom: spacing.sm,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    backgroundColor: 'rgba(225, 6, 0, 0.08)',
-    borderRadius: borderRadius.md,
-    borderLeftWidth: 3,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.primaryRed + '0A',
+    borderRadius: borderRadius.xs,
+    borderLeftWidth: 2,
     borderLeftColor: colors.primaryRed,
   },
   avoidanceLabel: {
-    fontSize: fontSizes.caption,
+    fontSize: fontSizes.caption2,
     fontWeight: fontWeights.semibold,
     color: colors.primaryRed,
     marginBottom: spacing.xs,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: letterSpacing.caps,
   },
   avoidanceText: {
     fontSize: fontSizes.footnote,
@@ -2367,13 +2766,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   zoneIncidentsSheet: {
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface1,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     maxHeight: '70%',
     marginTop: '30%',
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
     borderBottomWidth: 0,
   },
   zoneIncidentsInner: {
@@ -2444,10 +2843,47 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     marginTop: 2,
   },
-  guidingAvoidanceText: {
+  guidingBottomBar: {
+    width: '100%',
+  },
+  guidingEtaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  guidingEtaLeft: {
+    flex: 1,
+    minWidth: 0,
+  },
+  guidingEtaBig: {
+    fontSize: fontSizes.title2,
+    fontWeight: fontWeights.bold,
+    color: colors.secondaryGreen,
+    letterSpacing: letterSpacing.tight,
+  },
+  guidingEtaDetail: {
     fontSize: fontSizes.footnote,
     color: colors.textSecondary,
-    marginBottom: spacing.sm,
+    marginTop: 1,
+  },
+  guidingEndBtn: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.primaryRed + '18',
+    borderWidth: 1,
+    borderColor: colors.primaryRed + '40',
+    marginLeft: spacing.md,
+  },
+  guidingEndBtnText: {
+    fontSize: fontSizes.body,
+    fontWeight: fontWeights.semibold,
+    color: colors.primaryRed,
+  },
+  guidingAvoidanceText: {
+    fontSize: fontSizes.caption2,
+    color: colors.textTertiary,
+    marginTop: spacing.sm,
   },
   guidingEtaBlock: {
     marginBottom: spacing.sm,
@@ -2477,15 +2913,33 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.sm,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: borderRadius.lg,
-    borderWidth: 1,
+    backgroundColor: colors.surface2,
+    borderRadius: borderRadius.xs,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   originPickerCurrentText: {
     fontSize: fontSizes.body,
     fontWeight: fontWeights.semibold,
     color: colors.tabActive,
+  },
+  originSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface2,
+    borderRadius: borderRadius.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.sm,
+  },
+  originSearchInput: {
+    flex: 1,
+    fontSize: fontSizes.body,
+    color: colors.textPrimary,
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.xs,
   },
   navStepBlock: {
     marginBottom: spacing.lg,
@@ -2501,9 +2955,10 @@ const styles = StyleSheet.create({
   navStepInstruction: {
     fontSize: fontSizes.title3,
     fontWeight: fontWeights.bold,
-    color: '#1a1a1a',
+    color: colors.textPrimary,
     marginBottom: spacing.xs,
     lineHeight: 26,
+    letterSpacing: letterSpacing.tight,
   },
   recentReportsSection: {
     marginBottom: spacing.md,
@@ -2566,12 +3021,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   placesSheet: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.surface1,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     maxHeight: '80%',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
     borderBottomWidth: 0,
   },
   placesSheetInner: {
@@ -2625,18 +3080,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: spacing.lg,
-    paddingHorizontal: spacing.xl,
-    borderRadius: borderRadius.lg,
-    backgroundColor: 'rgba(5, 5, 5, 0.9)',
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    paddingVertical: 14,
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.sm,
+    backgroundColor: colors.surface2,
+    marginBottom: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   placeRowText: {
     flex: 1,
@@ -2707,23 +3157,26 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   stepChip: {
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm + 2,
     paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.lg,
-    backgroundColor: '#f5f5f5',
-    marginRight: spacing.md,
+    borderRadius: borderRadius.xs,
+    backgroundColor: colors.surface2,
+    marginRight: spacing.sm,
     borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.05)',
+    borderColor: colors.border,
   },
   stepChipActive: {
-    backgroundColor: colors.tabActive,
+    backgroundColor: colors.primaryRed,
+    borderColor: colors.primaryRed,
   },
   stepChipText: {
-    fontSize: fontSizes.caption,
-    color: '#333',
+    fontSize: fontSizes.footnote,
+    color: colors.textSecondary,
+    fontWeight: fontWeights.medium,
   },
   stepChipTextActive: {
     color: colors.white,
+    fontWeight: fontWeights.semibold,
   },
   cardButtons: {
     gap: spacing.xs,
@@ -2769,14 +3222,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(20, 20, 20, 0.8)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: borderRadius.xs,
+    backgroundColor: colors.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   alternateRouteItemSelected: {
-    backgroundColor: 'rgba(225, 6, 0, 0.2)',
-    borderColor: colors.primaryRed,
+    backgroundColor: colors.primaryRed + '12',
+    borderColor: colors.primaryRed + '50',
   },
   alternateRouteInfo: {
     flex: 1,
@@ -2806,7 +3259,8 @@ const styles = StyleSheet.create({
   alternateRouteDiffNegative: {
     color: colors.secondaryGreen,
   },
-  navHeader: {
+  /* ── Google/Apple-style navigation banner ── */
+  navBanner: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -2814,64 +3268,170 @@ const styles = StyleSheet.create({
     zIndex: 10,
     overflow: 'hidden',
   },
-  navHeaderContent: {
+  navBannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.md,
   },
-  navBackButton: {
+  navBannerInstruction: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(225, 6, 0, 0.2)',
-  },
-  navBackText: {
-    fontSize: fontSizes.body,
-    fontWeight: fontWeights.semibold,
-    color: colors.primaryRed,
-  },
-  navHeaderCenter: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
+    gap: spacing.md,
     minWidth: 0,
   },
-  navHeaderTitle: {
+  navBannerArrow: {
+    fontSize: 32,
+    color: colors.textPrimary,
+    width: 40,
+    textAlign: 'center',
+  },
+  navBannerTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  navBannerDistance: {
     fontSize: fontSizes.title3,
     fontWeight: fontWeights.bold,
     color: colors.textPrimary,
-    textAlign: 'center',
+    letterSpacing: letterSpacing.tight,
   },
-  navHeaderSubtitle: {
+  navBannerText: {
     fontSize: fontSizes.caption,
     color: colors.textSecondary,
-    marginTop: 2,
-    textAlign: 'center',
+    marginTop: 1,
   },
-  navHeaderEta: {
-    fontSize: fontSizes.footnote,
-    color: colors.secondaryGreen,
-    marginTop: 4,
-    textAlign: 'center',
-    fontWeight: fontWeights.semibold,
+  navBannerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: spacing.md,
   },
-  navHeaderRight: {
-    width: 60,
-    alignItems: 'flex-end',
-  },
-  nav3DButton: {
+  navChatButton: {
     width: 40,
     height: 40,
-    borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.10)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  navChatIcon: {
+    fontSize: 18,
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.primaryRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  chatBadgeText: {
+    fontSize: 10,
+    fontWeight: fontWeights.bold,
+    color: colors.white,
+  },
+  navEscortPill: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(225, 6, 0, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(225, 6, 0, 0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  escortModalSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.surface1,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
+    borderBottomWidth: 0,
+  },
+  escortModalInner: {
+    padding: spacing.xl,
+  },
+  escortModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  escortModalTitle: {
+    fontSize: fontSizes.title3,
+    fontWeight: fontWeights.bold,
+    color: colors.textPrimary,
+    letterSpacing: letterSpacing.tight,
+  },
+  escortModalDesc: {
+    fontSize: fontSizes.footnote,
+    color: colors.textSecondary,
+    lineHeight: 19,
+    marginBottom: spacing.xl,
+  },
+  escortPrioritySection: {
+    marginBottom: spacing.xl,
+  },
+  escortSectionLabel: {
+    fontSize: fontSizes.caption2,
+    fontWeight: fontWeights.semibold,
+    color: colors.textTertiary,
+    letterSpacing: letterSpacing.caps,
+    marginBottom: spacing.sm,
+  },
+  escortPriorityRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  escortPriorityBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface2,
+    alignItems: 'center',
+  },
+  escortPriorityBtnActive: {
+    borderColor: '#007AFF60',
+    backgroundColor: '#007AFF15',
+  },
+  escortPriorityBtnUrgent: {
+    borderColor: '#FF3B3060',
+    backgroundColor: '#FF3B3015',
+  },
+  escortPriorityBtnText: {
+    fontSize: fontSizes.caption,
+    fontWeight: fontWeights.semibold,
+    color: colors.textSecondary,
+  },
+  escortPriorityBtnTextActive: {
+    color: '#007AFF',
+  },
+  escortPriorityBtnTextUrgent: {
+    color: '#FF3B30',
+  },
+  escortReasonInput: {
+    backgroundColor: colors.surface2,
+    borderRadius: borderRadius.xs,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
+    padding: spacing.md,
+    fontSize: fontSizes.body,
+    color: colors.textPrimary,
+    minHeight: 80,
   },
   cardWrapperFullScreen: {
     left: 0,
@@ -2882,6 +3442,7 @@ const styles = StyleSheet.create({
   },
   routeOptions: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
     marginBottom: spacing.sm,
   },
@@ -2889,15 +3450,10 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,
-    borderRadius: borderRadius.xl,
-    backgroundColor: 'rgba(5, 5, 5, 0.95)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 10,
+    borderRadius: borderRadius.xs,
+    backgroundColor: colors.surface2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
   },
   originButtonText: {
     fontSize: fontSizes.footnote,
@@ -2907,41 +3463,35 @@ const styles = StyleSheet.create({
   },
   modeSelector: {
     flexDirection: 'row',
-    gap: spacing.xs,
-    backgroundColor: 'rgba(5, 5, 5, 0.95)',
-    borderRadius: borderRadius.lg,
+    alignSelf: 'center',
+    gap: 2,
+    backgroundColor: colors.surface2,
+    borderRadius: borderRadius.xs,
     padding: 2,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   modeButton: {
-    paddingVertical: spacing.sm,
+    height: 34,
     paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.xs - 2,
     minWidth: 70,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
   modeButtonActive: {
-    backgroundColor: colors.tabActive,
-    shadowColor: colors.tabActive,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    backgroundColor: colors.primaryRed,
   },
   modeButtonText: {
     fontSize: fontSizes.footnote,
+    lineHeight: fontSizes.footnote,
     fontWeight: fontWeights.medium,
-    color: colors.textSecondary,
+    color: colors.textTertiary,
     textAlign: 'center',
   },
   modeButtonTextActive: {
     color: colors.white,
-    fontWeight: fontWeights.bold,
+    fontWeight: fontWeights.semibold,
   },
   checkInOverlay: {
     flex: 1,
@@ -2954,11 +3504,11 @@ const styles = StyleSheet.create({
     maxWidth: 400,
   },
   checkInContent: {
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface1,
     borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    borderWidth: 2,
-    borderColor: colors.primaryRed,
+    padding: spacing.xxl,
+    borderWidth: 1,
+    borderColor: colors.primaryRed + '40',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.5,
@@ -2966,11 +3516,12 @@ const styles = StyleSheet.create({
     elevation: 16,
   },
   checkInTitle: {
-    fontSize: fontSizes.title2,
+    fontSize: fontSizes.title3,
     fontWeight: fontWeights.bold,
     color: colors.primaryRed,
     marginBottom: spacing.md,
     textAlign: 'center',
+    letterSpacing: letterSpacing.tight,
   },
   checkInMessage: {
     fontSize: fontSizes.body,
@@ -2998,12 +3549,12 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   contactModalContent: {
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface1,
     borderTopLeftRadius: borderRadius.xl,
     borderTopRightRadius: borderRadius.xl,
     maxHeight: '70%',
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderLight,
   },
   contactModalHeader: {
     flexDirection: 'row',
@@ -3015,9 +3566,10 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   contactModalTitle: {
-    fontSize: fontSizes.title2,
+    fontSize: fontSizes.title3,
     fontWeight: fontWeights.bold,
     color: colors.textPrimary,
+    letterSpacing: letterSpacing.tight,
   },
   contactModalSubtitle: {
     fontSize: fontSizes.body,
@@ -3032,10 +3584,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   contactItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
+    backgroundColor: colors.surface2,
+    borderRadius: borderRadius.sm,
+    marginBottom: spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   contactItemContent: {
@@ -3047,8 +3599,8 @@ const styles = StyleSheet.create({
   contactIcon: {
     width: 40,
     height: 40,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primaryRed + '20',
+    borderRadius: borderRadius.xs,
+    backgroundColor: colors.primaryRed + '12',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -3083,15 +3635,15 @@ const styles = StyleSheet.create({
     fontWeight: fontWeights.medium,
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: borderRadius.md,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeButtonText: {
-    fontSize: fontSizes.title3,
-    color: colors.textPrimary,
+    fontSize: 16,
+    color: colors.textSecondary,
   },
 });

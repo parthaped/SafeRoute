@@ -36,23 +36,27 @@ export function Card({ children, style, useBlur = true, intensity = 40 }: CardPr
 const styles = StyleSheet.create({
   wrapper: {
     overflow: 'hidden',
-    borderRadius: borderRadius.xl,
-    backgroundColor: colors.cardBackground,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surface1,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   blur: {
     overflow: 'hidden',
     width: '100%',
   },
   rounded: {
-    borderRadius: borderRadius.xl,
+    borderRadius: borderRadius.lg,
   },
   inner: {
     padding: spacing.lg,
-    backgroundColor: 'rgba(10, 10, 10, 0.7)',
+    backgroundColor: 'rgba(8, 8, 8, 0.65)',
     width: '100%',
   },
   solid: {
-    backgroundColor: colors.cardBackground,
+    backgroundColor: colors.surface1,
     padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 });
